@@ -42,6 +42,10 @@ export type Mashup = {
   server?: { game: string; maxPlayers: number } | null;
   /** Outbound links (live catalog only): source repo, the modder's GitHub profile, bug tracker, releases. */
   links?: { repo: string; author: string | null; issues: string | null; releases: string | null };
+  /** What the player does before playing (the recipe's notes, plain text, live catalog only). */
+  notes?: string[];
+  /** How to play in game: goal, controls, where to go (the recipe's how_to_play, plain text, live catalog only). */
+  howToPlay?: string[];
 };
 
 export const CATALOG: Mashup[] = [

@@ -4,7 +4,7 @@
     <parameter name="version" required="true" />
   </parameters>
   <zip-file>
-    <pe-file path="sigf-app.exe" product-name="SIGF" product-version="${version}">
+    <pe-file path="SIGF.exe" product-name="SIGF" product-version="${version}">
       <authenticode-sign />
     </pe-file>
   </zip-file>

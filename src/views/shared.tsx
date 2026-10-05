@@ -47,11 +47,16 @@ export function ActionButton({ ctx, m, big = false }: { ctx: Ctx; m: Mashup; big
   );
 }
 
+/** Catalog text may carry `**bold**`: render it, never show the asterisks. */
+export function bold(text: string) {
+  return text.split(/\*\*(.+?)\*\*/g).map((part, i) => (i % 2 ? <b key={i}>{part}</b> : part));
+}
+
 export function Card({ ctx, m, i = 0 }: { ctx: Ctx; m: Mashup; i?: number }) {
   const miss = missing(ctx, m);
   return (
     <article className={`card ${miss.length ? 'card-dim' : ''}`} onClick={() => ctx.open(m)} style={{ ['--i' as string]: i }}>
-      <MashupCover host={m.host} guest={m.guest} cover={m.cover} />
+      <MashupCover host={m.host} guest={m.guest} cover={m.cover} clip={m.clip} />
       {m.clip && <video className="card-clip" src={m.clip} muted loop playsInline preload="none" onMouseEnter={(e) => e.currentTarget.play().catch(() => {})} onMouseLeave={(e) => { e.currentTarget.pause(); e.currentTarget.currentTime = 0; }} />}
       <div className="card-tags">
         {m.kind === 'passthrough' && <span className="chip chip-prism">Real crossover</span>}
@@ -60,10 +65,10 @@ export function Card({ ctx, m, i = 0 }: { ctx: Ctx; m: Mashup; i?: number }) {
       </div>
       <div className="card-body">
         <div className="card-pair">
-          {m.subtitle ?? <>{gameName(m.host)} <b>×</b> {GAME[m.guest ?? '']?.short ?? m.guest}</>}
+          {m.subtitle ?? <>{gameName(m.host)}{m.guest && <> <b>×</b> {gameName(m.guest)}</>}</>}
         </div>
         <h3>{m.name}</h3>
-        <p>{m.tagline}</p>
+        <p>{bold(m.tagline)}</p>
         <div className="card-foot">
           <span className="meta">
             {m.avatar ? <Avatar src={m.avatar} /> : m.by.agent && <i className="dot-agent" title="Built by an AI agent" />}

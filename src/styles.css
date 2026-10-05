@@ -92,6 +92,11 @@ kbd { font: 10px var(--f-mono); color: var(--ink-4); border: 1px solid var(--lin
 .store i { width: 5px; height: 5px; border-radius: 50%; background: var(--ink-4); }
 .store.on { color: var(--ink-2); }
 .store.on i { background: var(--ok); box-shadow: 0 0 8px var(--ok); }
+.refresh { width: 28px; height: 28px; margin-left: 14px; display: grid; place-items: center; border-radius: 7px; color: var(--ink-3); transition: background .15s, color .15s; }
+.refresh:hover { background: rgba(255, 255, 255, .06); color: var(--ink); }
+.refresh:disabled { cursor: default; }
+.refresh.spin svg { animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
 .winctl { display: flex; height: 100%; margin-left: 8px; }
 .winctl button { width: 46px; height: 100%; display: grid; place-items: center; color: var(--ink-3); transition: background .15s, color .15s; }
 .winctl button:hover { background: rgba(255, 255, 255, .06); color: var(--ink); }
@@ -132,12 +137,6 @@ kbd { font: 10px var(--f-mono); color: var(--ink-4); border: 1px solid var(--lin
     #0d0d10;
 }
 .art-gen span { font: 400 clamp(11px, 1.3vw, 16px)/1.3 var(--f-display); letter-spacing: .06em; color: rgba(255, 255, 255, .85); text-shadow: 0 2px 20px rgba(0, 0, 0, .6); }
-.art-blocks {
-  background:
-    linear-gradient(180deg, transparent 55%, rgba(0, 0, 0, .55)),
-    conic-gradient(from 90deg at 1px 1px, rgba(0, 0, 0, .25) 90deg, transparent 0) 0 0 / 18px 18px,
-    linear-gradient(180deg, #7ab8ff 0%, #9fd0ff 38%, #6bb34a 38.5%, #4f8f34 48%, #7a5532 48.5%, #5a3d22 100%);
-}
 
 .cover { position: relative; overflow: hidden; background: var(--raise); }
 .cover > .art { position: absolute; inset: 0; }
@@ -345,7 +344,14 @@ kbd { font: 10px var(--f-mono); color: var(--ink-4); border: 1px solid var(--lin
 .detail-cover::after { background: linear-gradient(180deg, transparent 35%, var(--bg-2)); }
 .detail-body { padding: 0 32px 40px; margin-top: -40px; position: relative; }
 .detail h1 { font: 400 28px/1.2 var(--f-display); margin: 10px 0 12px; }
-.lede { color: var(--ink-2); font-size: 15px; margin: 0 0 22px; }
+.lede { color: var(--ink-2); font-size: 15px; margin: 0 0 12px; }
+.byline { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; margin: 0 0 22px; font-size: 13px; color: var(--ink-3); }
+.byline a { color: var(--ink-2); text-decoration: underline; text-underline-offset: 3px; display: inline-flex; align-items: center; gap: 3px; }
+.byline a:hover { color: var(--ink); }
+.byline b { color: var(--ink-2); font-weight: 500; }
+.notes { margin: 0; padding: 0 0 0 18px; display: grid; gap: 6px; color: var(--ink-2); font-size: 13.5px; line-height: 1.5; user-select: text; }
+.notes-lead { list-style: none; margin-left: -18px; color: var(--ink); font-weight: 500; }
+.howto { color: var(--ink); }
 .detail-cta { display: flex; gap: 10px; margin-bottom: 28px; }
 .detail h4 { font: 500 11px var(--f-mono); letter-spacing: .14em; text-transform: uppercase; color: var(--ink-3); margin: 26px 0 10px; }
 .needs { display: grid; gap: 8px; }
@@ -587,3 +593,11 @@ textarea:focus { border-color: rgba(127, 224, 255, .5); }
 .pv-link { margin-right: auto; font-size: 12.5px; color: var(--ink-2); cursor: pointer; display: inline-flex; align-items: center; gap: 4px; }
 .pv-link:hover { color: var(--ink); }
 .pv-foot { margin: 12px 0 0; font-size: 11.5px; }
+
+/* Play with friends: steps first, settings last. */
+.together-lede { display: flex; align-items: center; gap: 8px; margin: 0; color: var(--ink); font-size: 13.5px; }
+.together-steps { margin: 0; padding-left: 20px; display: grid; gap: 6px; color: var(--ink-2); font-size: 13px; }
+.together-steps code { font: 12px var(--f-mono); color: var(--ink); background: rgba(255, 255, 255, .06); padding: 1px 6px; border-radius: 5px; user-select: text; }
+.together-public { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--ink-3); cursor: pointer; }
+.together-switch { margin-right: auto; font-size: 12.5px; color: var(--ink-3); text-decoration: underline; text-underline-offset: 3px; align-self: center; }
+.together-switch:hover { color: var(--ink); }

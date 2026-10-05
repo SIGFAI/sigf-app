@@ -108,6 +108,10 @@ export default function App() {
   const [privacyOpen, setPrivacyOpen] = useState(false);
   const warned = useRef<string | null>(null);
   const search = useRef<HTMLInputElement>(null);
+  // Refresh (button, F5 / Ctrl+R, window focus): one at a time; the last good catalog read for the focus refetch.
+  const [refreshing, setRefreshing] = useState(false);
+  const refreshRun = useRef<Promise<void> | null>(null);
+  const catalogAt = useRef(0);
   // Read by the long-lived listeners and timers below without re-subscribing them.
   const latest = useRef({ scan, owned: new Set<string>(), installs, hosted, server: null as HostedServer | null, join: (_id: string) => {} });
 
@@ -116,15 +120,8 @@ export default function App() {
     void loadPrivacy();
     scanGames().then(setScan);
     hostedList().then(setWorlds).catch(() => {});
-    // Live catalog first; seed entries stay for layout until the API has enough mashups.
-    getText(`${SITE}/api/app/catalog`)
-      .then((t) => {
-        const live = JSON.parse(t) as Partial<Mashup>[] as Mashup[];
-        const ids = new Set(live.map((m) => m.id));
-        setCatalog([...live.map((m) => ({ ...m, plays: m.plays ?? 0, rating: m.rating ?? 0, steps: m.steps ?? [], strategy: m.strategy ?? "", installSeconds: m.installSeconds ?? 30, sizeMb: m.sizeMb ?? 0, needs: m.needs ?? [m.host] })), ...(inTauri ? [] : CATALOG.filter((m) => !ids.has(m.id)))]);
-      })
-      .catch(() => {});
-    refreshInstalled();
+    void loadCatalog();
+    void refreshInstalled();
     const offs: (() => void)[] = [];
     onInstallProgress((p) => setInstalls((a) => ({ ...a, [p.id]: { ...a[p.id], phase: p.phase, pct: p.pct, started: a[p.id]?.started ?? Date.now(), real: true } }))).then((f) => offs.push(f));
     onJoinProgress((p) => setJoining((j) => (j && j.id === p.lobby && j.step !== 'error' ? { ...j, step: p.step } : j))).then((f) => offs.push(f));
@@ -313,10 +310,55 @@ export default function App() {
   const owned = useMemo(() => new Set((scan?.games ?? []).map((g) => g.canon).filter(Boolean) as string[]), [scan]);
 
   function refreshInstalled() {
-    installedMods().then((list) =>
+    return installedMods().then((list) =>
       setInstalls((a) => ({ ...a, ...Object.fromEntries(list.map((m) => [m.id, { phase: 'ready' as Phase, pct: 100, started: m.installedAt * 1000, real: true, version: m.version }])) })),
-    );
+    ).catch(() => {});
   }
+
+  /** Reads the live catalog; seed entries stay for layout (browser preview only) until the API has enough mashups. */
+  function loadCatalog() {
+    return getText(`${SITE}/api/app/catalog`)
+      .then((t) => {
+        const live = JSON.parse(t) as Partial<Mashup>[] as Mashup[];
+        const ids = new Set(live.map((m) => m.id));
+        setCatalog([...live.map((m) => ({ ...m, plays: m.plays ?? 0, rating: m.rating ?? 0, steps: m.steps ?? [], strategy: m.strategy ?? "", installSeconds: m.installSeconds ?? 30, sizeMb: m.sizeMb ?? 0, needs: m.needs ?? [m.host] })), ...(inTauri ? [] : CATALOG.filter((m) => !ids.has(m.id)))]);
+        catalogAt.current = Date.now();
+      })
+      .catch(() => {});
+  }
+
+  /** Refresh: the catalog, the installed mods and the game scan again. A click while one runs joins it. */
+  function refreshAll() {
+    refreshRun.current ??= (async () => {
+      setRefreshing(true);
+      try {
+        await Promise.allSettled([loadCatalog(), refreshInstalled(), scanGames().then(setScan)]);
+      } finally {
+        setRefreshing(false);
+        refreshRun.current = null;
+      }
+    })();
+    return refreshRun.current;
+  }
+
+  // F5 / Ctrl+R refresh the data instead of reloading the webview; back on the window, a catalog older than 2 min is read again.
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => {
+      if (e.key === 'F5' || ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'r')) {
+        e.preventDefault();
+        if (!e.repeat) void refreshAll();
+      }
+    };
+    const focus = () => {
+      if (!refreshRun.current && Date.now() - catalogAt.current > 120_000) void loadCatalog();
+    };
+    window.addEventListener('keydown', key);
+    window.addEventListener('focus', focus);
+    return () => {
+      window.removeEventListener('keydown', key);
+      window.removeEventListener('focus', focus);
+    };
+  }, []);
 
   /**
    * From a lobby id to the game: read the lobby (metadata only) and check the library, then ask the player. Nothing is
@@ -568,6 +610,9 @@ export default function App() {
             );
           })}
         </div>
+        <button className={`refresh ${refreshing ? 'spin' : ''}`} onClick={() => void refreshAll()} disabled={refreshing} title="Refresh" aria-label="Refresh">
+          <Icon name="refresh" size={15} />
+        </button>
         <div className="winctl">
           <button onClick={() => windowAction('minimize')} aria-label="Minimize"><Icon name="min" size={14} /></button>
           <button onClick={() => windowAction('toggleMaximize')} aria-label="Maximize"><Icon name="max" size={12} /></button>

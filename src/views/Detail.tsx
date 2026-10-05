@@ -6,9 +6,20 @@ import { Avatar, GameArt, Icon, MashupCover, fmtCount } from '../ui';
 import { ActionButton, gameName } from './shared';
 import { PlayTogether } from './Lobbies';
 
+/** Taglines may carry `**bold**` from the catalog: render it, never show the asterisks. */
+function bold(text: string) {
+  return text.split(/\*\*(.+?)\*\*/g).map((part, i) => (i % 2 ? <b key={i}>{part}</b> : part));
+}
+
 export function Detail({ ctx, m, onClose }: { ctx: Ctx; m: Mashup; onClose: () => void }) {
   const installed = ctx.installs[m.id]?.phase === 'ready';
   const sides = [m.host, m.guest].filter(Boolean) as string[];
+  const author = m.links?.author ?? null;
+  const repo = m.links?.repo ?? m.repo ?? null;
+  const howTo = m.howToPlay ?? [];
+  const notes = m.notes ?? [];
+  // A community mashup (credited author, not SIGF or a launchpad agent): reviewed by SIGF before it is listed.
+  const community = !m.by.agent && m.by.name !== 'SIGF';
 
   return (
     <div className="scrim" onClick={onClose}>
@@ -21,7 +32,16 @@ export function Detail({ ctx, m, onClose }: { ctx: Ctx; m: Mashup; onClose: () =
             {m.kind === 'passthrough' && <span className="chip chip-prism">Real crossover</span>}
           </div>
           <h1>{m.name}</h1>
-          <p className="lede">{m.tagline}</p>
+          <p className="lede">{bold(m.tagline)}</p>
+          <div className="byline">
+            <span className="by-line">
+              <Avatar src={m.avatar} size={18} />
+              by {author ? <a onClick={() => openUrl(author)}>{m.by.name}</a> : <b>{m.by.name}</b>}
+            </span>
+            {repo && <a onClick={() => openUrl(repo)}>Source <Icon name="ext" size={11} /></a>}
+            {m.links?.issues && <a onClick={() => openUrl(m.links!.issues!)}>Report a bug <Icon name="ext" size={11} /></a>}
+            {m.status === 'beta' && <span className="chip">Beta</span>}
+          </div>
 
           <div className="detail-cta">
             <ActionButton ctx={ctx} m={m} big />
@@ -42,6 +62,24 @@ export function Detail({ ctx, m, onClose }: { ctx: Ctx; m: Mashup; onClose: () =
               <Icon name="build" size={15} /> Remix
             </button>
           </div>
+
+          {howTo.length > 0 && (
+            <>
+              <h4>How to play</h4>
+              <ol className="notes howto">
+                {howTo.map((n, i) => <li key={i}>{n}</li>)}
+              </ol>
+            </>
+          )}
+
+          {notes.length > 0 && (
+            <>
+              <h4>Before you play</h4>
+              <ul className="notes">
+                {notes.map((n, i) => <li key={i} className={i === 0 && /^how it works:/i.test(n) ? 'notes-lead' : undefined}>{n}</li>)}
+              </ul>
+            </>
+          )}
 
           <PlayTogether ctx={ctx} m={m} />
 
@@ -99,13 +137,13 @@ export function Detail({ ctx, m, onClose }: { ctx: Ctx; m: Mashup; onClose: () =
           {m.status === 'beta' && (
             <div className="trust">
               <Icon name="shield" size={16} />
-              <span>Beta: a community mashup by {m.by.name}, packaged by SIGF with credit. Expect rough edges{m.links?.issues ? ', and report bugs to the author with the link above' : ''}.</span>
+              <span>Beta: a community mashup by {m.by.name}, packaged by SIGF with credit. Expect rough edges{m.links?.issues ? ', and report bugs with the Report a bug link above' : ''}.</span>
             </div>
           )}
 
           <div className="trust">
             <Icon name="shield" size={16} />
-            <span>Scanned for malware and smoke-tested on a clean machine before listing. Every file is hash-checked. Your game files are snapshotted before anything changes, and Restore vanilla puts them back. Never launched into a game's official online mode.</span>
+            <span>{community && 'Reviewed by SIGF before listing (source review and Defender scan). '}Every file is hash-checked against its published release, and the source is public. Your game files are snapshotted before anything changes; Restore vanilla puts them back. Never launched into a game's official online mode.</span>
           </div>
         </div>
       </aside>

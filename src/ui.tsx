@@ -1,37 +1,42 @@
 import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
-import { GAME, art } from './data/games';
+import { GAME, GAMES, art } from './data/games';
 import { localSrc, steamLookup, type SteamArt } from './lib/api';
 import { imageOk, usePrivacy } from './lib/privacy';
 
 const hash = (s: string) => [...s].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7);
 
-/** A game's portrait art; generated tile when no store has art for it. Local paths are Steam's own art cache
- *  (newer apps only serve art under hashed CDN paths); the last resort is the same title found on Steam by name.
- *  The privacy choices decide which of these may load (docs/PRIVACY.md): with pictures off, only the local cache. */
+/** A game's portrait art. Order: Steam's own art cache on disk (newer apps only serve art under hashed CDN paths), the
+ *  store's art, the same title found on Steam by name, then our generated look-alike key art (public/art), and last a
+ *  flat generated tile. The privacy choices decide which may load (docs/PRIVACY.md): with pictures off, only local art. */
 export function GameArt({ id, name, src, wide, local, heroLocal, wideLocal, hero = false, className = '', style }: {
   id?: string | null; name: string; src?: string; wide?: string;
   local?: string; heroLocal?: string; wideLocal?: string;
   hero?: boolean; className?: string; style?: CSSProperties;
 }) {
-  const canon = id ? art(id) : {};
+  // A store we do not map by id (Ubisoft, ...) still gets the game's art when its name is a canonical game's name.
+  const cid = id ?? GAMES.find((g) => g.name.toLowerCase() === name.toLowerCase())?.id;
+  const canon = cid ? art(cid) : {};
   const privacy = usePrivacy();
   const [found, setFound] = useState<SteamArt | null>(null);
   const base = hero
     ? [localSrc(heroLocal), canon.hero, canon.wide, localSrc(wideLocal), wide]
     : [localSrc(local), src, canon.tall, localSrc(wideLocal), wide, canon.wide];
   const more = found ? (hero ? [found.hero, found.wide] : [found.art, found.wide]) : [];
-  const chain = [...base, ...more].filter((s) => imageOk(s, privacy)) as string[];
+  const gen = canon.gen ? (hero ? [canon.gen.hero, canon.gen.tall] : [canon.gen.tall, canon.gen.hero]) : [];
+  const real = [...base, ...more].filter((s) => imageOk(s, privacy)) as string[];
+  const chain = [...real, ...gen];
   const [i, setI] = useState(0);
   const out = i >= chain.length;
-  // Minecraft keeps its generated block tile: Steam has no such title to borrow. The search sends the game's name to
-  // Steam, so it runs only when the player allows it (and pictures, or its answer could not be shown).
+  // Real art ran out: look the name up on Steam, unless we have generated art for it (those games are not on Steam).
+  // The search sends the game's name to Steam, so it runs only when the player allows it.
   const search = !!privacy?.asked && privacy.storeArt && privacy.artSearch;
+  const realOut = i >= real.length;
   useEffect(() => {
-    if (!out || found || id === 'minecraft' || !search) return;
+    if (!realOut || found || canon.gen || !search) return;
     let live = true;
     steamLookup(name).then((a) => live && a && setFound(a));
     return () => { live = false; };
-  }, [out, found, id, name, search]);
+  }, [realOut, found, !!canon.gen, name, search]);
   if (!out) {
     return (
       <div className={`art ${className}`} style={style}>
@@ -39,42 +44,46 @@ export function GameArt({ id, name, src, wide, local, heroLocal, wideLocal, hero
       </div>
     );
   }
-  const g = id ? GAME[id] : undefined;
+  const g = cid ? GAME[cid] : undefined;
   const hue = g?.hue ?? hash(name) % 360;
-  const blocky = id === 'minecraft';
   return (
-    <div className={`art art-gen ${blocky ? 'art-blocks' : ''} ${className}`} style={{ ...style, ['--h' as string]: hue }}>
+    <div className={`art art-gen ${className}`} style={{ ...style, ['--h' as string]: hue }}>
       <span>{g?.short ?? name}</span>
     </div>
   );
 }
 
 /** Two games, one image: host and guest art meet on a diagonal seam of light. With a cover (the build's own image,
- *  from the live catalog) the cover fills the frame and the two games shrink to a thin split strip at its foot;
- *  a cover that fails to load falls back to the split art. */
-export function MashupCover({ host, guest, cover, className = '' }: { host: string; guest?: string; cover?: string | null; className?: string }) {
+ *  from the live catalog) or a clip (a frame of the build's video, used as a still) the build fills the frame and the
+ *  two games shrink to a thin split strip at its foot; a cover or clip that fails to load falls back to the split art. */
+export function MashupCover({ host, guest, cover, clip, className = '' }: {
+  host: string; guest?: string; cover?: string | null; clip?: string | null; className?: string;
+}) {
   const guestKnown = guest && GAME[guest];
   const [broken, setBroken] = useState(false);
+  const [clipBroken, setClipBroken] = useState(false);
   const privacy = usePrivacy();
-  if (cover && !broken && imageOk(cover, privacy)) {
-    return (
-      <div className={`cover cover-still ${className}`}>
-        <img className="cover-img" src={cover} alt="" draggable={false} loading="lazy" onError={() => setBroken(true)} />
-        <div className="cover-strip">
-          <GameArt id={host} name={GAME[host]?.name ?? host} className="cover-a" hero />
-          {guest && <GameArt id={guestKnown ? guest : null} name={GAME[guest]?.name ?? guest} className="cover-b" hero />}
-          {guest && <i className="seam" />}
-        </div>
-      </div>
-    );
-  }
-  return (
-    <div className={`cover ${className}`}>
+  const split = (
+    <>
       <GameArt id={host} name={GAME[host]?.name ?? host} className="cover-a" hero />
       {guest && <GameArt id={guestKnown ? guest : null} name={GAME[guest]?.name ?? guest} className="cover-b" hero />}
       {guest && <i className="seam" />}
-    </div>
+    </>
   );
+  const still = cover && !broken && imageOk(cover, privacy)
+    ? <img className="cover-img" src={cover} alt="" draggable={false} loading="lazy" onError={() => setBroken(true)} />
+    : clip && !clipBroken && imageOk(clip, privacy)
+      ? <video className="cover-img" src={`${clip}#t=6`} preload="metadata" muted playsInline disablePictureInPicture onError={() => setClipBroken(true)} />
+      : null;
+  if (still) {
+    return (
+      <div className={`cover cover-still ${className}`}>
+        {still}
+        <div className="cover-strip">{split}</div>
+      </div>
+    );
+  }
+  return <div className={`cover ${className}`}>{split}</div>;
 }
 
 /** A launchpad agent's token image, small and round next to its name; nothing when it fails to load. */
@@ -102,6 +111,7 @@ export function Icon({ name, size = 20 }: { name: string; size?: number }) {
     download: (<><path d="M12 4v11M7 10l5 5 5-5" /><path d="M5 20h14" /></>),
     clock: (<><circle cx="12" cy="12" r="8" /><path d="M12 7.5V12l3 2" /></>),
     restore: (<><path d="M4 12a8 8 0 1 0 2.4-5.7" /><path d="M4 4v4h4" /></>),
+    refresh: (<><path d="M20 12a8 8 0 1 1-2.4-5.7" /><path d="M20 4v4h-4" /></>),
     shield: <path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z" />,
     live: <circle cx="12" cy="12" r="4" fill="currentColor" stroke="none" />,
     swap: (<><path d="M7 7h11l-3-3M17 17H6l3 3" /></>),

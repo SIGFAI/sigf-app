@@ -74,6 +74,7 @@ Unknown fields are ignored by the app.
   "version": "1.0.0",                       // also the release tag v1.0.0
   "name": "Blocky Los Santos",
   "tagline": "...",
+  "how_to_play": [ "...", "..." ],            // optional: 2-5 in-game lines (goal, controls, where to go)
   "kind": "passthrough",                    // "mod" (no guest) | "mashup" (guest re-made inside the host) | "passthrough" (both games run, linked)
   "games": [
     { "game": "gta5", "role": "host", "engine": "...", "apps": { "steam": "271590" } },
@@ -104,6 +105,15 @@ Unknown fields are ignored by the app.
 
 Fields, one format each:
 
+- `how_to_play` (optional): 2 to 5 short in-game lines, plain English, no markdown: the goal, the controls, where to
+  go ("You spawn wearing the jetpack.", "Hold Jump in the air to fly and shoot.", "Follow the lab hall east, collect
+  coins, dodge zappers."). Never install steps (mod folders, jars, loaders, versions, launch options): the app installs
+  and launches the mod. The catalog accepts at most 5 strings of at most 160 chars and shows them on the card as
+  `howToPlay` (cleaned like `notes`). SIGF writes it per mod after reading the mod's README and source.
+- `notes` (optional): real caveats the player must know before playing (requirements the app cannot install, known
+  limits). Never a copy of a README's manual install steps.
+- `install[].jvm_args` on a Minecraft side built with the SIGF Minecraft kit: `["-Dsigf.player=1"]` (player mode: the
+  player joins in survival, no stream camera, no stream demo).
 - `kind`: `mod` | `mashup` | `passthrough`. `games[].game` is a canonical id (`[a-z0-9-]`: `gta5`, `minecraft`,
   `tf2`, ...); exactly one `role: "host"`. `apps` is store -> the game's id in that store (Steam app id); `builds`
   (store -> game build ids the mod is known to run on) is optional.

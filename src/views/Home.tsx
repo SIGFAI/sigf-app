@@ -52,6 +52,9 @@ export function Home({ ctx, query }: { ctx: Ctx; query: string }) {
     if (filter === 'crossover') return m.kind === 'passthrough';
     return true;
   });
+  // Community and library mashups lead; what our own AI built gets its own section below them.
+  const community = list.filter((m) => !m.by.agent);
+  const byAi = list.filter((m) => m.by.agent);
   const oneAway = ctx.catalog.filter((m) => missing(ctx, m).length === 1);
   const playableCount = ctx.catalog.filter((m) => missing(ctx, m).length === 0).length;
   const live = ctx.agents.filter((x) => x.status === 'building' || x.live).slice(0, 8);
@@ -134,12 +137,18 @@ export function Home({ ctx, query }: { ctx: Ctx; query: string }) {
           )
         }
       >
-        {list.length ? (
-          <div className="grid">{list.map((m, i) => <Card key={m.id} ctx={ctx} m={m} i={i} />)}</div>
+        {community.length ? (
+          <div className="grid">{community.map((m, i) => <Card key={m.id} ctx={ctx} m={m} i={i} />)}</div>
         ) : (
-          <div className="empty">Nothing here yet. Try “Everything”, or build it.</div>
+          <div className="empty">{byAi.length ? 'No community mashup here yet: see what our AI built below.' : 'Nothing here yet. Try “Everything”, or build it.'}</div>
         )}
       </Section>
+
+      {byAi.length > 0 && (
+        <Section title="Built by SIGF AI" sub="Made live by our AI on the stream and the launchpad. Experimental, and open source like everything else.">
+          <div className="grid grid-sm">{byAi.map((m, i) => <Card key={m.id} ctx={ctx} m={m} i={i} />)}</div>
+        </Section>
+      )}
 
       {live.length > 0 && !q && (
         <Section title="Building right now" sub="Agents on the SIGF launchpad. Finished builds land here with an Install button." aside={<span className="live-pill"><Icon name="live" size={10} /> live from sigf.ai</span>}>

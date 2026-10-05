@@ -13,7 +13,12 @@ export type CanonGame = {
   store?: string;
   /** Tile colors for games with no public art. */
   hue?: number;
+  /** Steam art at a non-standard path (newer apps serve it under hashed CDN folders, old ones as portrait.png). */
+  steamArt?: { tall?: string; hero?: string };
 };
+
+/** Games with fal-generated look-alike key art in public/art (no logos, no text, no real characters; library/QC.md). */
+const GENERATED = new Set(['minecraft', 'fortnite', 'jetpackjoyride', 'diablo', 'diablo2', 'skate3', 'pokemon', 'wiisports', 'brainrot', 'footballgame', 'hytale']);
 
 const steamArt = (id: string) => `https://cdn.cloudflare.steamstatic.com/steam/apps/${id}/library_600x900.jpg`;
 const steamWide = (id: string) => `https://cdn.cloudflare.steamstatic.com/steam/apps/${id}/header.jpg`;
@@ -40,15 +45,32 @@ export const GAMES: CanonGame[] = [
   { id: 'cyberpunk', name: 'Cyberpunk 2077', short: 'Cyberpunk', steam: ['1091500'], gog: ['1423049311'], epic: /^Ginger$/i, store: 'https://store.steampowered.com/app/1091500' },
   { id: 'quake', name: 'Quake', short: 'Quake', steam: ['2310'], store: 'https://store.steampowered.com/app/2310' },
   { id: 'superhot', name: 'SUPERHOT', short: 'SUPERHOT', steam: ['322500'], store: 'https://store.steampowered.com/app/322500' },
-  { id: 'skatebird', name: 'SkateBIRD', short: 'SkateBIRD', steam: ['1112730'], store: 'https://store.steampowered.com/app/1112730' },
-  { id: 'mw2', name: 'Call of Duty: Modern Warfare 2 (2009)', short: 'MW2', steam: ['10180'], store: 'https://store.steampowered.com/app/10180' },
+  { id: 'skatebird', name: 'SkateBIRD', short: 'SkateBIRD', steam: ['971030'], store: 'https://store.steampowered.com/app/971030' },
+  { id: 'mw2', name: 'Call of Duty: Modern Warfare 2 (2009)', short: 'MW2', steam: ['10180', '10190'], store: 'https://store.steampowered.com/app/10180' },
+  { id: 'fivenightsatfreddys', name: "Five Nights at Freddy's", short: 'FNAF', steam: ['319510'], steamArt: { tall: 'https://cdn.cloudflare.steamstatic.com/steam/apps/319510/portrait.png' }, store: 'https://store.steampowered.com/app/319510' },
+  { id: 'overwatch', name: 'Overwatch 2', short: 'Overwatch', steam: ['2357570'], store: 'https://store.steampowered.com/app/2357570' },
+  { id: 'kingdomtwocrowns', name: 'Kingdom Two Crowns', short: 'Kingdom', steam: ['701160'], store: 'https://store.steampowered.com/app/701160' },
+  { id: 'babaisyou', name: 'Baba Is You', short: 'Baba Is You', steam: ['736260'], store: 'https://store.steampowered.com/app/736260' },
+  { id: 'ashorthike', name: 'A Short Hike', short: 'A Short Hike', steam: ['1055540'], store: 'https://store.steampowered.com/app/1055540' },
+  { id: 'celeste', name: 'Celeste', short: 'Celeste', steam: ['504230'], store: 'https://store.steampowered.com/app/504230' },
+  { id: 'mirrorsedge-catalyst', name: "Mirror's Edge Catalyst", short: "Mirror's Edge", steam: ['1233570'], store: 'https://store.steampowered.com/app/1233570' },
+  // Not on Steam: generated key art (public/art), with their real names.
+  { id: 'fortnite', name: 'Fortnite', short: 'Fortnite', epic: /^Fortnite$/i, hue: 265 },
+  { id: 'jetpackjoyride', name: 'Jetpack Joyride', short: 'Jetpack Joyride', hue: 30 },
+  { id: 'pokemon', name: 'Pokémon', short: 'Pokémon', hue: 50 },
+  { id: 'wiisports', name: 'Wii Sports', short: 'Wii Sports', hue: 190 },
+  { id: 'brainrot', name: 'Brainrot', short: 'Brainrot', hue: 320 },
+  { id: 'footballgame', name: 'Football Game', short: 'Football', hue: 120 },
   { id: 'zomboid', name: 'Project Zomboid', short: 'Zomboid', steam: ['108600'], store: 'https://store.steampowered.com/app/108600' },
   { id: 'acvalhalla', name: "Assassin's Creed Valhalla", short: 'AC Valhalla', steam: ['2208920'], store: 'https://store.steampowered.com/app/2208920', hue: 30 },
   // Mashup library (community fusions, 2026-10-05).
   { id: 'ultrakill', name: 'ULTRAKILL', short: 'ULTRAKILL', steam: ['1229490'], store: 'https://store.steampowered.com/app/1229490' },
   { id: 'slimerancher', name: 'Slime Rancher', short: 'Slime Rancher', steam: ['433340'], store: 'https://store.steampowered.com/app/433340' },
   { id: 'outerwilds', name: 'Outer Wilds', short: 'Outer Wilds', steam: ['753640'], store: 'https://store.steampowered.com/app/753640' },
-  { id: 'peak', name: 'PEAK', short: 'PEAK', steam: ['3527290'], store: 'https://store.steampowered.com/app/3527290' },
+  { id: 'peak', name: 'PEAK', short: 'PEAK', steam: ['3527290'], steamArt: {
+    tall: 'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/3527290/480bd879ac737921bfa2529a6fea15961267ad21/library_600x900.jpg',
+    hero: 'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/3527290/d75184257596a3d2b402c58db0ef28844804e952/library_hero.jpg',
+  }, store: 'https://store.steampowered.com/app/3527290' },
   { id: 'readyornot', name: 'Ready or Not', short: 'Ready or Not', steam: ['1144200'], store: 'https://store.steampowered.com/app/1144200' },
   { id: 'rdr2', name: 'Red Dead Redemption 2', short: 'RDR2', steam: ['1174180'], store: 'https://store.steampowered.com/app/1174180' },
   { id: 'bully', name: 'Bully: Scholarship Edition', short: 'Bully', steam: ['12200'], store: 'https://store.steampowered.com/app/12200' },
@@ -63,9 +85,15 @@ export const GAMES: CanonGame[] = [
 
 export const GAME = Object.fromEntries(GAMES.map((g) => [g.id, g])) as Record<string, CanonGame>;
 
-export function art(id: string): { tall?: string; wide?: string; hero?: string } {
-  const s = GAME[id]?.steam?.[0];
-  return s ? { tall: steamArt(s), wide: steamWide(s), hero: steamHero(s) } : {};
+export type GameArtSet = { tall?: string; wide?: string; hero?: string; gen?: { tall: string; hero: string } };
+
+/** Real store art first (Steam CDN); `gen` is the generated look-alike art, used only after every real source. */
+export function art(id: string): GameArtSet {
+  const g = GAME[id];
+  const s = g?.steam?.[0];
+  const out: GameArtSet = s ? { tall: g.steamArt?.tall ?? steamArt(s), wide: steamWide(s), hero: g.steamArt?.hero ?? steamHero(s) } : {};
+  if (GENERATED.has(id)) out.gen = { tall: `/art/${id}-tall.webp`, hero: `/art/${id}-hero.webp` };
+  return out;
 }
 
 /** Maps a scanned game to its canonical id, or null when we have no mods for it yet. */

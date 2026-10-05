@@ -70,9 +70,9 @@ jobs:
 
       - name: Keep the unsigned exe (reproducibility target)
         run: |
-          mkdir -p "$GITHUB_WORKSPACE/out" "$GITHUB_WORKSPACE/to-sign/exe"
-          cp src-tauri/target/release/sigf-app.exe "$GITHUB_WORKSPACE/out/sigf-app-${GITHUB_REF_NAME}-unsigned.exe"
-          cp src-tauri/target/release/sigf-app.exe "$GITHUB_WORKSPACE/to-sign/exe/sigf-app.exe"
+          mkdir -p "$GITHUB_WORKSPACE/out" "$GITHUB_WORKSPACE/repro" "$GITHUB_WORKSPACE/to-sign/exe"
+          cp src-tauri/target/release/SIGF.exe "$GITHUB_WORKSPACE/repro/SIGF-${GITHUB_REF_NAME}-unsigned.exe"
+          cp src-tauri/target/release/SIGF.exe "$GITHUB_WORKSPACE/to-sign/exe/SIGF.exe"
 
       # ---- 2. Sign the app exe through SignPath ----
       - name: Upload unsigned exe for signing
@@ -81,7 +81,7 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: unsigned-exe
-          path: to-sign/exe/sigf-app.exe
+          path: to-sign/exe/SIGF.exe
           if-no-files-found: error
 
       - name: Sign app exe (SignPath)
@@ -102,14 +102,17 @@ jobs:
 
       - name: Put the signed exe back for bundling
         if: env.SIGNED == 'true'
-        run: cp signed/exe/sigf-app.exe src-tauri/target/release/sigf-app.exe
+        run: cp signed/exe/SIGF.exe src-tauri/target/release/SIGF.exe
 
       # ---- 3. Bundle the NSIS installer around the (signed) exe ----
       # `tauri bundle` packs the existing release build without recompiling (Tauri CLI 2.x). Check after the first
       # run that the exe inside the installer is the signed one (hash it after a silent install).
       - name: Build NSIS installer
         run: |
-          npx tauri bundle --ci --bundles nsis
+          # createUpdaterArtifacts off here: the updater signature is made over the FINAL installer in step 5, after
+          # SignPath. --no-binary-patching: the bundler would otherwise write the bundle type into SIGF.exe, which breaks
+          # its Authenticode signature (the updater then reads the `windows-x86_64` entry of latest.json, see below).
+          npx tauri bundle --ci --bundles nsis --no-binary-patching --config '{"bundle":{"createUpdaterArtifacts":false}}'
           mkdir -p "$GITHUB_WORKSPACE/to-sign/installer"
           cp src-tauri/target/release/bundle/nsis/SIGF_${VERSION}_x64-setup.exe "$GITHUB_WORKSPACE/to-sign/installer/"
           # MSI too, if wanted: add "msi" to bundle.targets (needs WiX, preinstalled on GitHub's Windows runners)
@@ -142,20 +145,44 @@ jobs:
             version: "${{ env.VERSION }}"
 
       # ---- 5. Checksums, build info, provenance, release ----
-      - name: Collect artifacts and SHA256SUMS
+      - name: Collect the installer
         run: |
           if [ "$SIGNED" = true ]; then
-            cp signed/installer/*.exe "$GITHUB_WORKSPACE/out/"
-            cp signed/exe/sigf-app.exe "$GITHUB_WORKSPACE/out/sigf-app-${GITHUB_REF_NAME}.exe"
+            cp signed/installer/SIGF_${VERSION}_x64-setup.exe "$GITHUB_WORKSPACE/out/SIGF-Setup-${VERSION}.exe"
           else
-            cp to-sign/installer/*.exe "$GITHUB_WORKSPACE/out/"
+            cp to-sign/installer/SIGF_${VERSION}_x64-setup.exe "$GITHUB_WORKSPACE/out/SIGF-Setup-${VERSION}.exe"
           fi
+          # Players get one file with a plain name; the bare app exe (reproducibility target) stays a workflow artifact.
+
+      - name: Updater signature and latest.json (over the final installer)
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          [ -n "$TAURI_SIGNING_PRIVATE_KEY" ] || { echo "::error::repo secret TAURI_SIGNING_PRIVATE_KEY is missing"; exit 1; }
+          EXE="SIGF-Setup-${VERSION}.exe"
+          # --app-version binds the signature to this version (the app sets requireSignedVersion).
+          npx tauri signer sign --app-version "$VERSION" "out/$EXE" > /dev/null
+          test -s "out/$EXE.sig"
+          EXE="$EXE" node -e '
+            const fs = require("fs");
+            const { VERSION, EXE, GITHUB_REPOSITORY, GITHUB_REF_NAME } = process.env;
+            const url = `https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}/${EXE}`;
+            const signature = fs.readFileSync(`out/${EXE}.sig`, "utf8").trim();
+            const notes = `SIGF ${VERSION}: https://github.com/${GITHUB_REPOSITORY}/releases/tag/${GITHUB_REF_NAME}`;
+            const manifest = { version: VERSION, notes, pub_date: new Date().toISOString().replace(/\.\d+Z$/, "Z"),
+              platforms: { "windows-x86_64": { signature, url } } };
+            fs.writeFileSync("out/latest.json", JSON.stringify(manifest, null, 2) + "\n");'
+          cat out/latest.json
+
+      - name: Build info and SHA256SUMS
+        run: |
           {
             echo "tag: $GITHUB_REF_NAME"; echo "commit: $GITHUB_SHA"; echo "runner: $ImageOS $ImageVersion"
             echo "signed: $SIGNED"; rustc -Vv; echo "node $(node -v)"; echo "SOURCE_DATE_EPOCH=$SOURCE_DATE_EPOCH"
           } > "$GITHUB_WORKSPACE/out/BUILDINFO.txt"
           cd "$GITHUB_WORKSPACE/out"
-          sha256sum *.exe BUILDINFO.txt > SHA256SUMS
+          sha256sum *.exe *.exe.sig latest.json BUILDINFO.txt > SHA256SUMS
           cat SHA256SUMS
 
       - name: Attest build provenance
@@ -164,7 +191,18 @@ jobs:
         with:
           subject-path: |
             out/*.exe
+            out/*.exe.sig
+            out/latest.json
             out/SHA256SUMS
+
+      - name: Keep build outputs as a workflow artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: sigf-${{ github.ref_name }}
+          path: |
+            out/
+            repro/
+          if-no-files-found: error
 
       - name: Keep the built files as a workflow artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -182,4 +220,4 @@ jobs:
           gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --verify-tag $PRE \
             --title "SIGF $GITHUB_REF_NAME" \
             --notes "Verify: \`gh attestation verify <file> --repo $GITHUB_REPOSITORY\` and compare SHA256SUMS. [Code signing policy](https://github.com/$GITHUB_REPOSITORY/blob/main/CODE-SIGNING-POLICY.md)" \
-            *.exe SHA256SUMS BUILDINFO.txt
+            *.exe *.exe.sig latest.json SHA256SUMS BUILDINFO.txt

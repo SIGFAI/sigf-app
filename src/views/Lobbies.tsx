@@ -324,7 +324,7 @@ export function PlayTogether({ ctx, m }: { ctx: Ctx; m: Mashup }) {
   const [addr, setAddr] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const canHost = !!m.server && !!ctx.hosting;
-  const [where, setWhere] = useState<'own' | 'sigf'>('own');
+  const [where, setWhere] = useState<'own' | 'sigf'>('sigf');
   const [region, setRegion] = useState(() => (ctx.hosting ? nearestRegion(ctx.hosting) : 'eu-west-1'));
   const onSigf = canHost && where === 'sigf';
   const cap = m.server?.maxPlayers ?? ctx.hosting?.limits.maxPlayers ?? 10;
@@ -358,14 +358,14 @@ export function PlayTogether({ ctx, m }: { ctx: Ctx; m: Mashup }) {
       ) : inTauri && (!m.version || !m.recipeUrl) ? (
         <p className="host-hint">Multiplayer opens once this mashup is in the live catalog.</p>
       ) : !ready ? (
-        <p className="host-hint">Get it first: you host from your own game.</p>
+        <p className="host-hint">Get it first, then invite your friends.</p>
       ) : outdated ? (
         <p className="host-hint">
           You have v{inst.version}; lobbies run v{m.version}. <a onClick={() => ctx.get(m)}>Update</a> to host.
         </p>
       ) : !open ? (
-        <button className="act act-ghost together-open" onClick={() => setOpen(true)} disabled={!!ctx.hosted} title={ctx.hosted ? 'Close your other lobby first' : undefined}>
-          <Icon name="people" size={15} /> Open a lobby
+        <button className="act act-get together-open" onClick={() => setOpen(true)} disabled={!!ctx.hosted} title={ctx.hosted ? 'Close your other lobby first' : undefined}>
+          <Icon name="people" size={15} /> Play with friends
         </button>
       ) : (
         <form
@@ -378,73 +378,72 @@ export function PlayTogether({ ctx, m }: { ctx: Ctx; m: Mashup }) {
             } catch {}
             setBusy(true);
             const targets: Target[] = onSigf ? [] : games.map((g) => ({ game: g, address: addr[g].trim() }));
-            await ctx.host(m, { mode, maxPlayers: onSigf ? Math.min(max, cap) : max, name: name.trim(), targets, region: onSigf ? region : undefined });
+            await ctx.host(m, { mode, maxPlayers: onSigf ? cap : max, name: name.trim(), targets, region: onSigf ? region : undefined });
             setBusy(false);
             setOpen(false);
           }}
         >
-          {canHost && (
-            <div className="where">
-              <button type="button" className={where === 'own' ? 'on' : ''} onClick={() => setWhere('own')}>
-                <b>Use my own game</b>
-                <small>Your world is the server. Unlimited, you keep it running.</small>
-              </button>
-              <button type="button" className={where === 'sigf' ? 'on' : ''} onClick={() => { setWhere('sigf'); setMax((v) => Math.min(v, cap)); }}>
-                <b><Icon name="server" size={13} /> Host on SIGF <em>free</em></b>
-                <small>A server online in about a minute. Up to {cap} players, {ctx.hosting?.limits.hours ?? 8} h, world kept {ctx.hosting?.limits.worldDays ?? 7} days.</small>
-              </button>
-            </div>
+          {onSigf ? (
+            <>
+              {/* The default when SIGF can host: one button, nothing to configure. */}
+              <p className="together-lede">
+                <Icon name="server" size={14} /> We start a free server with this exact version. Ready in about a minute, up to {cap} friends, {ctx.hosting?.limits.hours ?? 8} h.
+              </p>
+              <ol className="together-steps">
+                <li>Start the server</li>
+                <li>Copy the invite link and send it</li>
+                <li>Friends click it: the app installs the mashup and joins you</li>
+              </ol>
+            </>
+          ) : (
+            <>
+              <p className="together-lede">Your own game is the server. Three steps:</p>
+              <ol className="together-steps">
+                <li>{games.includes('minecraft') ? <>Launch the mashup, open your world, type <code>/publish true survival 25565</code></> : 'Launch the mashup and open your game to other players'}</li>
+                <li>Create the invite below and send the link</li>
+                <li>Friends click it and join you</li>
+              </ol>
+              {games.map((g) => (
+                <label key={g} className={`field ${addr[g] && !validAddress(addr[g]) ? 'bad' : ''}`}>
+                  <small>{games.length > 1 ? `${GAME[g]?.short ?? g} address` : 'Your address'}</small>
+                  <input value={addr[g] ?? ''} onChange={(e) => setAddr((a) => ({ ...a, [g]: e.target.value }))} spellCheck={false} placeholder="Click “Fill it for me”" />
+                </label>
+              ))}
+              {!games.every((g) => addr[g]?.trim()) && (
+                <button type="button" className="act act-ghost" onClick={() => void fillLan()}>
+                  <Icon name="link" size={13} /> Fill it for me
+                </button>
+              )}
+              <p className="host-hint">Works for friends on your home network. For friends elsewhere, use a tunnel such as playit.gg and paste its address.</p>
+            </>
           )}
-          <div className="seg">
-            <button type="button" className={mode === 'invite' ? 'on' : ''} onClick={() => setMode('invite')}>Invite link</button>
-            <button type="button" className={mode === 'public' ? 'on' : ''} onClick={() => setMode('public')}>Public lobby</button>
-          </div>
-          <label className="field">
-            <small>Your name</small>
-            <input value={name} onChange={(e) => setName(e.target.value)} maxLength={32} placeholder="What your friends see" />
-          </label>
-          <label className="field">
-            <small>Players</small>
-            <input type="range" min={2} max={onSigf ? cap : m.needs.includes('minecraft') || m.guest === 'minecraft' ? 100 : 32} value={onSigf ? Math.min(max, cap) : max} onChange={(e) => setMax(Number(e.target.value))} />
-            <b className="field-val">{onSigf ? Math.min(max, cap) : max}</b>
-          </label>
-          {onSigf && ctx.hosting && (
-            <div className="field">
-              <small>Region</small>
-              <div className="seg">
-                {ctx.hosting.regions.map((r) => (
-                  <button key={r.id} type="button" className={region === r.id ? 'on' : ''} disabled={!r.available} title={r.available ? undefined : 'Opens tomorrow'} onClick={() => setRegion(r.id)}>
-                    {r.label}{r.available ? '' : ' · tomorrow'}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-          {!onSigf && games.map((g) => (
-            <label key={g} className={`field ${addr[g] && !validAddress(addr[g]) ? 'bad' : ''}`}>
-              <small>{GAME[g]?.short ?? g} address</small>
-              <input value={addr[g] ?? ''} onChange={(e) => setAddr((a) => ({ ...a, [g]: e.target.value }))} spellCheck={false} placeholder="host:port" />
+          {!loadName() && (
+            <label className="field">
+              <small>Your name</small>
+              <input value={name} onChange={(e) => setName(e.target.value)} maxLength={32} placeholder="What your friends see" />
             </label>
-          ))}
-          {!onSigf && !games.every((g) => addr[g]?.trim()) && (
-            <p className="host-hint">
-              <button type="button" className="act act-ghost" onClick={() => void fillLan()}>
-                <Icon name="link" size={13} /> Use my LAN address
-              </button>{' '}
-              Fills in this PC's local network address. It is shared with everyone who has the invite link. Or type a tunnel or public address.
-            </p>
           )}
-          <p className="host-hint">
-            {onSigf ? 'SIGF starts a Minecraft server with this exact version. Its address goes into the lobby by itself: friends join with the invite link, nothing to forward. The server runs while this lobby is open.'
-              : games.includes('minecraft')
-              ? 'Your world is the server: start it, then type /publish true survival 25565 in chat. Friends outside your network need a forwarded port or a tunnel address (playit.gg) instead of a LAN address.'
-              : 'Your game is the server: start it and open it to others. Friends outside your network need a forwarded port or a tunnel address.'}{' '}
-            The address goes only to people with the link, never on a public list.
-          </p>
+          {onSigf && ctx.hosting && ctx.hosting.regions.length > 1 && (
+            <div className="seg">
+              {ctx.hosting.regions.map((r) => (
+                <button key={r.id} type="button" className={region === r.id ? 'on' : ''} disabled={!r.available} title={r.available ? undefined : 'Opens tomorrow'} onClick={() => setRegion(r.id)}>
+                  {r.label}{r.available ? '' : ' · tomorrow'}
+                </button>
+              ))}
+            </div>
+          )}
+          <label className="together-public">
+            <input type="checkbox" checked={mode === 'public'} onChange={(e) => setMode(e.target.checked ? 'public' : 'invite')} /> Also list it publicly so anyone can join
+          </label>
           <div className="host-actions">
+            {canHost && (
+              <a className="together-switch" onClick={() => setWhere(onSigf ? 'own' : 'sigf')}>
+                {onSigf ? 'Host from my own game instead' : 'Use a free SIGF server instead'}
+              </a>
+            )}
             <button type="button" className="act act-ghost" onClick={() => setOpen(false)}>Cancel</button>
             <button className="act act-get" disabled={!nameOk || !addrOk || busy}>
-              {busy ? 'Opening…' : onSigf ? 'Start free server' : mode === 'public' ? 'Open public lobby' : 'Create invite'}
+              {busy ? 'Starting…' : onSigf ? 'Start free server' : 'Create invite'}
             </button>
           </div>
         </form>
