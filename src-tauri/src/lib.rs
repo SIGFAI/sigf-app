@@ -4,6 +4,7 @@ pub mod join;
 pub mod launch;
 pub mod privacy;
 pub mod scan;
+pub mod update;
 
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -16,6 +17,11 @@ const LAUNCH_SCHEMES: &[&str] = &["steam://", "com.epicgames.launcher://", "upla
 
 /// One install/restore at a time: they share installed.json and may touch the same game folder.
 static INSTALL_LOCK: Mutex<()> = Mutex::new(());
+
+/// An install, restore or join install holds the lock right now (an update waits for it).
+pub(crate) fn install_running() -> bool {
+    matches!(INSTALL_LOCK.try_lock(), Err(std::sync::TryLockError::WouldBlock))
+}
 
 /// hosted.json is read and rewritten whole: one writer at a time.
 static HOSTED_LOCK: Mutex<()> = Mutex::new(());
@@ -521,6 +527,8 @@ pub fn run() {
         }))
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_opener::init())
+        // Driven from the core only (src/update.rs): the webview has no updater permission.
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             // The config glob covers any Steam root; this adds the real one in case the glob misses it.
             if let Some(dir) = scan::steam::library_cache() {
@@ -540,7 +548,8 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             scan_games, steam_lookup, launch, install, restore, installed, fetch_text, play, join_lobby, lobby_api, lan_address,
-            take_links, minecraft_players, hosted_list, hosted_save, hosted_forget, privacy_get, privacy_set
+            take_links, minecraft_players, hosted_list, hosted_save, hosted_forget, privacy_get, privacy_set,
+            update::update_check, update::update_blocked, update::update_install
         ])
         .run(tauri::generate_context!())
         .expect("error while running the SIGF app");

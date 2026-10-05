@@ -91,7 +91,7 @@ export function imageOk(src: string | null | undefined, p: Privacy | null): bool
   if (!src) return false;
   if (!/^https?:\/\//i.test(src)) return true;   // asset:, data:, http://asset.localhost (Steam's art cache on disk)
   if (/^http:\/\/asset\.localhost\//i.test(src)) return true;
+  if (SITE_IMG.test(src)) return true;           // sigf.ai serves the catalog itself: its covers and clips need no extra choice
   if (!p?.asked) return false;
-  if (SITE_IMG.test(src)) return true;
   return p.storeArt && THIRD_PARTY_IMG.test(src);
 }

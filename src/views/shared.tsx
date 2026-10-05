@@ -40,6 +40,14 @@ export function ActionButton({ ctx, m, big = false }: { ctx: Ctx; m: Mashup; big
       </button>
     );
   }
+  // A newer version is published: Play would start the old one (e.g. a fix the player is waiting for), so update first.
+  if (inst.real && inst.version && m.version && inst.version !== m.version) {
+    return (
+      <button className={`${cls} act-get`} title={`You have v${inst.version}; v${m.version} is out`} onClick={(e) => { e.stopPropagation(); ctx.get(m); }}>
+        Update <small>v{m.version}</small>
+      </button>
+    );
+  }
   return (
     <button className={`${cls} act-play`} onClick={(e) => { e.stopPropagation(); ctx.play(m); }}>
       <Icon name="play" size={big ? 18 : 14} /> Play

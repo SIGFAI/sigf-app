@@ -29,9 +29,13 @@ zip = { version = "8.6.0", default-features = false, features = ["deflate"] }
 thiserror = "2"
 sha1 = "0.11.0"
 base64 = "0.22"
+# In-app updates, signed with the release key (tauri.conf.json plugins.updater; src/update.rs).
+tauri-plugin-updater = "2"
 
 [target.'cfg(windows)'.dependencies]
 winreg = "0.55"
+# The process list for the updater's "Close your game first" (src/update.rs).
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Diagnostics_ToolHelp", "Win32_System_Threading"] }
 [profile.release]
 lto = true
 codegen-units = 1

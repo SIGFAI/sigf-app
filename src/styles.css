@@ -601,3 +601,21 @@ textarea:focus { border-color: rgba(127, 224, 255, .5); }
 .together-public { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--ink-3); cursor: pointer; }
 .together-switch { margin-right: auto; font-size: 12.5px; color: var(--ink-3); text-decoration: underline; text-underline-offset: 3px; align-self: center; }
 .together-switch:hover { color: var(--ink); }
+
+/* ---------- Update banner (views/Update.tsx) ---------- */
+.update-banner {
+  position: fixed; top: calc(var(--tb) + 12px); right: 16px; z-index: 45; display: flex; align-items: center; gap: 12px;
+  max-width: min(560px, calc(100vw - 32px)); padding: 10px 12px 10px 16px; border-radius: 14px; background: rgba(18, 18, 21, .94);
+  border: 1px solid var(--line-2); backdrop-filter: blur(12px); box-shadow: 0 20px 50px rgba(0, 0, 0, .6); animation: update-in .45s var(--ease-out);
+}
+.update-banner > svg { color: var(--ok); flex: none; }
+.update-text { position: relative; display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; padding-bottom: 2px; }
+.update-text b { font-size: 13.5px; font-weight: 600; }
+.update-text small { font: 400 11.5px var(--f-mono); color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.update-bar { display: block; height: 3px; margin-top: 6px; border-radius: 2px; background: rgba(255, 255, 255, .08); overflow: hidden; position: relative; }
+.update-bar::before { content: ''; position: absolute; inset: 0; width: var(--p); background: linear-gradient(90deg, #5a96ff, #7fe0ff); transition: width .25s linear; }
+.update-bar[data-indeterminate]::before { animation: update-slide 1.2s infinite var(--ease-io); }
+.update-banner .act { height: 34px; padding: 0 14px; font-size: 12.5px; white-space: nowrap; }
+@keyframes update-in { from { opacity: 0; transform: translateY(-10px); } }
+@keyframes update-slide { from { transform: translateX(-100%); } to { transform: translateX(300%); } }
+@media (prefers-reduced-motion: reduce) { .update-banner, .update-bar::before { animation: none; } }

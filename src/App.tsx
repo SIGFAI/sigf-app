@@ -12,6 +12,8 @@ import { Detail } from './views/Detail';
 import { Picker } from './views/Picker';
 import { JoinSheet, Lobbies, type Joining } from './views/Lobbies';
 import { PrivacyPanel } from './views/Privacy';
+import { UpdateBanner } from './views/Update';
+import { UPDATE_EVERY_MS, checkUpdate, type Available } from './lib/update';
 import { loadPrivacy, usePrivacy } from './lib/privacy';
 import {
   ApiError, SERVER_ACTIVE, closeLobby, createLobby, getLobby, getServer, heartbeat, hostedForget, hostedList, hostedSave, hostingInfo, isJoinError, joinLobby,
@@ -106,6 +108,8 @@ export default function App() {
   const [worlds, setWorlds] = useState<HostedEntry[]>([]);
   const privacy = usePrivacy();
   const [privacyOpen, setPrivacyOpen] = useState(false);
+  const [update, setUpdate] = useState<Available | null>(null);
+  const [updateLater, setUpdateLater] = useState<string | null>(null);
   const warned = useRef<string | null>(null);
   const search = useRef<HTMLInputElement>(null);
   // Refresh (button, F5 / Ctrl+R, window focus): one at a time; the last good catalog read for the focus refetch.
@@ -139,9 +143,19 @@ export default function App() {
     let live = true;
     // Invite links from outside (sigf:// clicks, a second launch), the one the app was started with included.
     onInviteLinks((id) => latest.current.join(id)).then((f) => (live ? (off = f) : f()));
+    // Updates: asked now and every 6 hours (GitHub, docs/PRIVACY.md). "Later" hides that version until the next check.
+    const ask = () => checkUpdate().then((u) => {
+      if (!live) return;
+      setUpdate(u);
+      setUpdateLater(null);
+    }, () => {});
+    const first = setTimeout(ask, 3000);
+    const every = setInterval(ask, UPDATE_EVERY_MS);
     return () => {
       live = false;
       off?.();
+      clearTimeout(first);
+      clearInterval(every);
     };
   }, [answered]);
 
@@ -308,6 +322,12 @@ export default function App() {
   }
 
   const owned = useMemo(() => new Set((scan?.games ?? []).map((g) => g.canon).filter(Boolean) as string[]), [scan]);
+  // Game id -> install folder from the scan: the core keeps the games of installed mashups and checks whether one runs.
+  const gameDirs = useMemo(() => {
+    const dirs: Record<string, string> = {};
+    for (const g of scan?.games ?? []) if (g.canon && g.installDir && !dirs[g.canon]) dirs[g.canon] = g.installDir;
+    return dirs;
+  }, [scan]);
 
   function refreshInstalled() {
     return installedMods().then((list) =>
@@ -435,8 +455,8 @@ export default function App() {
         const dirs: Record<string, string> = {};
         for (const g of scan?.games ?? []) if (g.canon && g.installDir && !dirs[g.canon]) dirs[g.canon] = g.installDir;
         // The catalog serves recipeUrl relative to the site (/api/app/recipe/<id>@<version>).
-        await installMashup(await getText(new URL(m.recipeUrl, SITE).href), dirs);
-        setInstalls((a) => ({ ...a, [m.id]: { phase: 'ready', pct: 100, started: Date.now(), real: true } }));
+        const done = await installMashup(await getText(new URL(m.recipeUrl, SITE).href), dirs);
+        setInstalls((a) => ({ ...a, [m.id]: { phase: 'ready', pct: 100, started: Date.now(), real: true, version: done?.version ?? m.version } }));
         flash(`${m.name} is ready to play`);
       } catch (e) {
         setInstalls((a) => {
@@ -673,6 +693,17 @@ export default function App() {
       {joining && <JoinSheet ctx={ctx} j={joining} onClose={() => setJoining(null)} onConfirm={(l) => void confirmJoin(joining.id, l)} />}
       {privacy && !privacy.asked && <PrivacyPanel first initial={privacy} onDone={() => {}} />}
       {privacy?.asked && privacyOpen && <PrivacyPanel initial={privacy} onDone={() => { setPrivacyOpen(false); flash('Privacy choices saved'); }} onClose={() => setPrivacyOpen(false)} />}
+      {update && answered && updateLater !== update.version && (
+        <UpdateBanner
+          update={update}
+          gameDirs={gameDirs}
+          beforeInstall={async () => {
+            const h = latest.current.hosted;
+            if (h) await closeLobby(h).catch(() => {});
+          }}
+          onLater={() => setUpdateLater(update.version)}
+        />
+      )}
       {toast && <div className="toast" key={toast}><Icon name="check" size={16} />{toast}</div>}
     </div>
   );

@@ -79,6 +79,7 @@ export function PrivacyPanel({ initial, first = false, onDone, onClose }: { init
             <summary>Always, when you use a feature</summary>
             <ul>
               <li><b>sigf.ai</b>: the mashup catalog and the studio list when the app starts, a mashup's recipe when you install it, and the lobby you host or join (your display name, the lobby settings, the join address). sigf.ai keeps a salted hash of your IP address with a lobby to limit abuse.</li>
+              <li><b>GitHub</b>: a check for a newer version of SIGF when the app starts and every 6 hours, with nothing sent beyond a normal request. An update downloads only when you click Update and restart.</li>
               <li><b>GitHub and Modrinth</b>: file downloads when you install a mashup or join a lobby.</li>
               <li><b>Your own game server</b>: a status check every 30 seconds while you host a Minecraft lobby.</li>
               <li><b>Never</b>: telemetry, analytics, crash reports, accounts, store logins or tokens.</li>
