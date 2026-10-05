@@ -1,0 +1,143 @@
+{
+  "id": "sigf/skse-fusion",
+  "version": "0.1.0",
+  "name": "SKSE Fusion",
+  "tagline": "Test fixture.",
+  "kind": "passthrough",
+  "games": [
+    {
+      "game": "skyrim",
+      "role": "host",
+      "engine": "Skyrim Special Edition + SKSE64 plugin",
+      "apps": {
+        "steam": "489830"
+      }
+    },
+    {
+      "game": "minecraft",
+      "role": "guest",
+      "label": "Minecraft",
+      "mc": "26.3",
+      "loader": "fabric@0.19.5",
+      "java": "25"
+    }
+  ],
+  "requires": [
+    {
+      "id": "skse64",
+      "page": "https://skse.silverlock.org/",
+      "note": "start Skyrim with skse64_loader.exe"
+    },
+    {
+      "id": "fabric-loader",
+      "version": "0.19.5"
+    }
+  ],
+  "install": [
+    {
+      "game": "skyrim",
+      "strategy": "game-dir-snapshot",
+      "files": [
+        {
+          "src": "skse-fusion-skyrim.zip",
+          "dst": "{game}/Data",
+          "unpack": true,
+          "contents": [
+            {
+              "path": "SKSE/Plugins/Fusion.dll",
+              "sha256": "8f2cb2c4c6360f738fd8bf7e32ab42438467c6c2ccf2b9f7dfb06c6830773164"
+            },
+            {
+              "path": "SKSE/Plugins/Fusion.ini",
+              "sha256": "f57653062fe249aa150aa9bd025184946f247f3cb59968c6dd0e8fbc70814437"
+            },
+            {
+              "path": "SKSE/Plugins/Fusion/LICENSE.txt",
+              "sha256": "22acbedfa2b5ca0bd304b128c7bbe2b7bb62f138b298ec424fee2c092b6bbc5f"
+            },
+            {
+              "path": "SKSE/Plugins/Fusion/SOURCE.txt",
+              "sha256": "6cb83098ebc9ebc1a0e72ef1b64e43417356e2ec454e8f72da140e58fdbad2bf"
+            },
+            {
+              "path": "SKSE/Plugins/Fusion/THIRD-PARTY-NOTICES.md",
+              "sha256": "3e400eee2b7e5137c7f0b7fbd39d14ec2d212fce22c0f5764841a554ccfa5039"
+            }
+          ],
+          "url": "file:///FIXTURE/skse-fusion/skse-fusion-skyrim.zip",
+          "sha256": "bc68021ce9f3a1a84bf298daa3d359592728f25c95f394be484adffb6f011783",
+          "size": 969
+        }
+      ]
+    },
+    {
+      "game": "minecraft",
+      "strategy": "mrpack",
+      "pack": {
+        "src": "skse-fusion.mrpack",
+        "url": "file:///FIXTURE/skse-fusion/skse-fusion.mrpack",
+        "sha256": "c7ae7cf0f57b523d9456736cca030603ba5cf541401d70359d6807a861df6a0a",
+        "size": 866
+      },
+      "jvm_args": [
+        "-Dfusion.startHidden=true"
+      ]
+    }
+  ],
+  "launch": [
+    {
+      "game": "minecraft"
+    },
+    {
+      "game": "skyrim",
+      "args": [],
+      "exe": "skse64_loader.exe"
+    }
+  ],
+  "files": [
+    {
+      "name": "skse-fusion-skyrim.zip",
+      "url": "file:///FIXTURE/skse-fusion/skse-fusion-skyrim.zip",
+      "sha256": "bc68021ce9f3a1a84bf298daa3d359592728f25c95f394be484adffb6f011783",
+      "size": 969
+    },
+    {
+      "name": "skse-fusion.mrpack",
+      "url": "file:///FIXTURE/skse-fusion/skse-fusion.mrpack",
+      "sha256": "c7ae7cf0f57b523d9456736cca030603ba5cf541401d70359d6807a861df6a0a",
+      "size": 866
+    }
+  ],
+  "source": {
+    "repo": "https://github.com/example/skse-fusion",
+    "license": "MIT AND GPL-3.0-or-later",
+    "upstream_license": "MIT",
+    "tag": "v0.1.0",
+    "commit": "0000000000000000000000000000000000000000",
+    "hosted": "https://github.com/SIGFAI/skse-fusion",
+    "rebuilt": {
+      "file": "Fusion.dll"
+    }
+  },
+  "media": {},
+  "built_by": {
+    "author": "example",
+    "authors": [
+      "example"
+    ],
+    "packaged_by": "SIGF"
+  },
+  "idea_by": "example",
+  "built_at": "2026-01-01T00:00:00.000Z",
+  "server": {
+    "game": "minecraft",
+    "mc": "26.3",
+    "loader": "fabric@0.19.5",
+    "ram_gb": 2,
+    "max_players": 10,
+    "pack": "skse-fusion.mrpack",
+    "load_on_server": [
+      "fusion"
+    ]
+  }
+}

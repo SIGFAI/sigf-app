@@ -1,0 +1,100 @@
+{
+  "id": "sigf/tf2-dragon-shout",
+  "version": "1.0.0",
+  "name": "Dragon Shout",
+  "tagline": "Test fixture.",
+  "kind": "mod",
+  "games": [
+    {
+      "game": "tf2",
+      "role": "host",
+      "engine": null,
+      "apps": {
+        "steam": "440"
+      }
+    }
+  ],
+  "requires": [],
+  "install": [
+    {
+      "game": "tf2",
+      "strategy": "profile",
+      "files": [
+        {
+          "src": "tf2-dragon-shout.zip",
+          "dst": "{game}/tf/custom/sigf_dragon_shout",
+          "unpack": true,
+          "contents": [
+            {
+              "path": "cfg/sigf.cfg",
+              "sha256": "b28045b7be23bbd38608409fd08d3b9292aead680e336d14b9b74d3cc6f9fd3c"
+            },
+            {
+              "path": "scripts/vscripts/sigf_mod.nut",
+              "sha256": "336f365e3407c76220fd9683cb075331635d4b6cfab8a8421f48df0f80c73a13"
+            }
+          ],
+          "url": "file:///FIXTURE/tf2/tf2-dragon-shout.zip",
+          "sha256": "8940325cdda343b37c3566b19a53715ba6e2013e8ef87d356b7f13953af9ee8e",
+          "size": 275
+        },
+        {
+          "src": "tf2-dragon-shout-game-kit.zip",
+          "dst": "{game}/tf/custom/sigf_kit",
+          "unpack": true,
+          "contents": [
+            {
+              "path": "cfg/sigf.cfg",
+              "sha256": "3b41e510859cb3aab7e3966bb600b00c2509a7b3802388a2db2241df2ecd4842"
+            },
+            {
+              "path": "scripts/vscripts/mapspawn.nut",
+              "sha256": "b6f6bf761d1597d5b1599293fd6ceacf533e583ec141f92c0b7fde305ad8aeca"
+            }
+          ],
+          "url": "file:///FIXTURE/tf2/tf2-dragon-shout-game-kit.zip",
+          "sha256": "e38c05a28284789443b8db6df80f1d836ba6729d46d22c6f98918295bede0abd",
+          "size": 289
+        }
+      ]
+    }
+  ],
+  "launch": [
+    {
+      "game": "tf2",
+      "args": [
+        "-game",
+        "tf",
+        "-insecure"
+      ]
+    }
+  ],
+  "files": [
+    {
+      "name": "tf2-dragon-shout.zip",
+      "url": "file:///FIXTURE/tf2/tf2-dragon-shout.zip",
+      "sha256": "8940325cdda343b37c3566b19a53715ba6e2013e8ef87d356b7f13953af9ee8e",
+      "size": 275
+    },
+    {
+      "name": "tf2-dragon-shout-game-kit.zip",
+      "url": "file:///FIXTURE/tf2/tf2-dragon-shout-game-kit.zip",
+      "sha256": "e38c05a28284789443b8db6df80f1d836ba6729d46d22c6f98918295bede0abd",
+      "size": 289
+    }
+  ],
+  "source": {
+    "repo": "https://github.com/SIGFAI/tf2-dragon-shout",
+    "license": "MIT"
+  },
+  "media": {},
+  "built_by": {
+    "agent": "SIGF"
+  },
+  "idea_by": "example",
+  "kit": {
+    "id": "tf2",
+    "status": null
+  },
+  "built_at": "2026-01-01T00:00:00.000Z"
+}

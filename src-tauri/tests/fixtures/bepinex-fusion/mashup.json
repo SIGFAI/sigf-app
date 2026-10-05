@@ -1,0 +1,165 @@
+{
+  "id": "sigf/bepinex-fusion",
+  "version": "1.0.0",
+  "name": "BepInEx Fusion",
+  "tagline": "Test fixture.",
+  "kind": "mashup",
+  "games": [
+    {
+      "game": "slimerancher",
+      "role": "host",
+      "label": "Slime Rancher",
+      "engine": "Unity (Mono) + BepInEx 5 plugin",
+      "apps": {
+        "steam": "433340"
+      }
+    },
+    {
+      "game": "minecraft",
+      "role": "guest",
+      "label": "Minecraft",
+      "mc": "26.1.2",
+      "uses": "assets of the player's own install, not launched"
+    }
+  ],
+  "requires": [
+    {
+      "id": "bepinex",
+      "version": "5.4.23.5",
+      "license": "LGPL-2.1",
+      "page": "https://github.com/BepInEx/BepInEx/releases/tag/v5.4.23.5",
+      "source": {
+        "url": "file:///FIXTURE/bepinex-fusion/BepInEx_win_x64_5.4.23.5.zip",
+        "sha256": "5280f5f7ae1750cf63797347c268253fe7476b9249c3f10149467d0a147b0b53"
+      }
+    },
+    {
+      "id": "minecraft-java",
+      "version": "26.1.2"
+    }
+  ],
+  "install": [
+    {
+      "game": "slimerancher",
+      "strategy": "game-dir-snapshot",
+      "loader": "bepinex",
+      "files": [
+        {
+          "src": "BepInEx_win_x64_5.4.23.5.zip",
+          "dst": "{game}",
+          "unpack": true,
+          "contents": [
+            {
+              "path": ".doorstop_version",
+              "sha256": "7838cbd39728839f87e7a6b70ac3b08932243cf111241237fd9b6654630b5bcf"
+            },
+            {
+              "path": "changelog.txt",
+              "sha256": "37be8bcca316fade618d7f42b17cfed4a4e7c2923c9046ba5c0dd92e7b7da506"
+            },
+            {
+              "path": "doorstop_config.ini",
+              "sha256": "f1b17f3ec14e505ef2e3d043bacaa0c66bbc9baa678e2f1bdbacc0b0440faf85"
+            },
+            {
+              "path": "winhttp.dll",
+              "sha256": "8c577f306ad725845035c525999c186b1736f23162c4c677fc71bd2a4c6656fd"
+            },
+            {
+              "path": "BepInEx/core/0Harmony.dll",
+              "sha256": "b078b72cdf80c3ab4358db8c2bee5334a0a3cb3d7fb7208d3c6cc1af1c0effbf"
+            },
+            {
+              "path": "BepInEx/core/BepInEx.dll",
+              "sha256": "3dba669211b4d94c16b0ab22706ea04ac4fe9d9db96395f6e7a6f54dc8b080fb"
+            },
+            {
+              "path": "BepInEx/core/BepInEx.Preloader.dll",
+              "sha256": "a469aeae22d2c98502a46e6cfb0d3a97b3056976dfb7ad3174b0f1d9f100fbe0"
+            },
+            {
+              "path": "BepInEx/core/Mono.Cecil.dll",
+              "sha256": "6255288e5028901ebfd796cdb3df85e346bcf7d6e1b1dbee8c9de5ebd169bf38"
+            },
+            {
+              "path": "BepInEx/core/MonoMod.Utils.dll",
+              "sha256": "086a067c928ceac7487356bce4a50b996733305265c45d8cc8532d1de2eb748d"
+            }
+          ],
+          "url": "file:///FIXTURE/bepinex-fusion/BepInEx_win_x64_5.4.23.5.zip",
+          "sha256": "5280f5f7ae1750cf63797347c268253fe7476b9249c3f10149467d0a147b0b53",
+          "size": 1414
+        },
+        {
+          "src": "bepinex-fusion-slimerancher.zip",
+          "dst": "{game}/BepInEx/plugins/Fusion",
+          "unpack": true,
+          "contents": [
+            {
+              "path": "LICENSE.txt",
+              "sha256": "1f43bd04e56bf576a7dc6d2c8ba783678896a2a2b61eed2a4cd30ba382e69639"
+            },
+            {
+              "path": "Fusion.dll",
+              "sha256": "3d3d2603d3c5fc166b5a3fe57680832c5c29dd014ab9d5f7c2ba94adb3085d73"
+            },
+            {
+              "path": "THIRD_PARTY_NOTICES.md",
+              "sha256": "a9e2fd4ab3394d7148e893d9aed14bb4ce89984adb678a889b24707cb6c2be29"
+            }
+          ],
+          "url": "file:///FIXTURE/bepinex-fusion/bepinex-fusion-slimerancher.zip",
+          "sha256": "cad68462adedd670952b0292932f49d9adfa319de3e1718a75063c4bcfb0f0c5",
+          "size": 412
+        }
+      ]
+    }
+  ],
+  "launch": [
+    {
+      "game": "slimerancher",
+      "args": []
+    }
+  ],
+  "files": [
+    {
+      "name": "BepInEx_win_x64_5.4.23.5.zip",
+      "url": "file:///FIXTURE/bepinex-fusion/BepInEx_win_x64_5.4.23.5.zip",
+      "sha256": "5280f5f7ae1750cf63797347c268253fe7476b9249c3f10149467d0a147b0b53",
+      "size": 1414
+    },
+    {
+      "name": "bepinex-fusion-slimerancher.zip",
+      "url": "file:///FIXTURE/bepinex-fusion/bepinex-fusion-slimerancher.zip",
+      "sha256": "cad68462adedd670952b0292932f49d9adfa319de3e1718a75063c4bcfb0f0c5",
+      "size": 412
+    }
+  ],
+  "source": {
+    "repo": "https://github.com/example/bepinex-fusion",
+    "license": "MIT AND LGPL-2.1",
+    "upstream_license": "MIT",
+    "tag": "v0.1.0",
+    "commit": "0000000000000000000000000000000000000000",
+    "hosted": "https://github.com/SIGFAI/bepinex-fusion",
+    "bundled": [
+      {
+        "name": "BepInEx",
+        "version": "5.4.23.5",
+        "repo": "https://github.com/BepInEx/BepInEx",
+        "license": "LGPL-2.1"
+      }
+    ]
+  },
+  "media": {},
+  "built_by": {
+    "author": "example",
+    "authors": [
+      "example"
+    ],
+    "packaged_by": "SIGF"
+  },
+  "idea_by": "example",
+  "built_at": "2026-01-01T00:00:00.000Z",
+  "status": "beta"
+}

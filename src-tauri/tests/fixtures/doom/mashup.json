@@ -1,0 +1,74 @@
+{
+  "id": "sigf/doom-dragon-shout",
+  "version": "1.0.0",
+  "name": "Dragon Shout",
+  "tagline": "Test fixture.",
+  "kind": "mashup",
+  "games": [
+    {
+      "game": "doom",
+      "role": "host",
+      "engine": "GZDoom + Freedoom 2"
+    },
+    {
+      "game": "skyrim",
+      "role": "guest",
+      "label": "Skyrim"
+    }
+  ],
+  "requires": [
+    {
+      "id": "gzdoom"
+    },
+    {
+      "id": "freedoom2"
+    }
+  ],
+  "install": [
+    {
+      "game": "doom",
+      "strategy": "args",
+      "files": [
+        {
+          "src": "doom-dragon-shout.pk3",
+          "dst": "{app}/mod.pk3",
+          "unpack": false,
+          "url": "file:///FIXTURE/doom/doom-dragon-shout.pk3",
+          "sha256": "6e9b5ee97be92a1b3b5085bd2fb29e5cd7e3be89cb7155360e4f55f62c2e9d91",
+          "size": 133
+        }
+      ]
+    }
+  ],
+  "launch": [
+    {
+      "game": "doom",
+      "args": [
+        "-file",
+        "{app}/mod.pk3"
+      ]
+    }
+  ],
+  "files": [
+    {
+      "name": "doom-dragon-shout.pk3",
+      "url": "file:///FIXTURE/doom/doom-dragon-shout.pk3",
+      "sha256": "6e9b5ee97be92a1b3b5085bd2fb29e5cd7e3be89cb7155360e4f55f62c2e9d91",
+      "size": 133
+    }
+  ],
+  "source": {
+    "repo": "https://github.com/SIGFAI/doom-dragon-shout",
+    "license": "MIT"
+  },
+  "media": {},
+  "built_by": {
+    "agent": "SIGF"
+  },
+  "idea_by": "example",
+  "kit": {
+    "id": "doom",
+    "status": null
+  },
+  "built_at": "2026-01-01T00:00:00.000Z"
+}

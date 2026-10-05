@@ -1,0 +1,77 @@
+{
+  "id": "sigf/gta5-rain-of-cows",
+  "version": "1.0.0",
+  "name": "Rain Of Cows",
+  "tagline": "Test fixture.",
+  "kind": "mod",
+  "games": [
+    {
+      "game": "gta5",
+      "role": "host",
+      "engine": "GTA V + FiveM (local FXServer, Lua resource)",
+      "apps": {
+        "steam": "271590"
+      }
+    }
+  ],
+  "requires": [
+    {
+      "id": "fivem"
+    }
+  ],
+  "install": [
+    {
+      "game": "gta5",
+      "strategy": "profile",
+      "runtime": "fivem",
+      "files": [
+        {
+          "src": "gta5-rain-of-cows.zip",
+          "dst": "{fivem}/resources/sigf_rain_of_cows",
+          "unpack": true,
+          "contents": [
+            {
+              "path": "client.lua",
+              "sha256": "9d650dae24a9fd8b97ac861f33c460f9f2181bf5675118f1576cd597a0cc2497"
+            },
+            {
+              "path": "fxmanifest.lua",
+              "sha256": "a62224a911b2852a5d110db78cf5698ee1af2bded2780792aee8d16d0da9e88b"
+            }
+          ],
+          "url": "file:///FIXTURE/gta5/gta5-rain-of-cows.zip",
+          "sha256": "a710a5eb07a2a10b84340eb5af66c39bbaba2fe530e3eabd26edf274f5105dfa",
+          "size": 296
+        }
+      ]
+    }
+  ],
+  "launch": [
+    {
+      "game": "gta5",
+      "args": []
+    }
+  ],
+  "files": [
+    {
+      "name": "gta5-rain-of-cows.zip",
+      "url": "file:///FIXTURE/gta5/gta5-rain-of-cows.zip",
+      "sha256": "a710a5eb07a2a10b84340eb5af66c39bbaba2fe530e3eabd26edf274f5105dfa",
+      "size": 296
+    }
+  ],
+  "source": {
+    "repo": "https://github.com/SIGFAI/gta5-rain-of-cows",
+    "license": "MIT"
+  },
+  "media": {},
+  "built_by": {
+    "agent": "SIGF"
+  },
+  "idea_by": "example",
+  "kit": {
+    "id": "gta5",
+    "status": null
+  },
+  "built_at": "2026-01-01T00:00:00.000Z"
+}

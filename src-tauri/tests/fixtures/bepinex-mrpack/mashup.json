@@ -1,0 +1,177 @@
+{
+  "id": "sigf/bepinex-mrpack",
+  "version": "0.1.0",
+  "name": "BepInEx Bridge",
+  "tagline": "Test fixture.",
+  "kind": "passthrough",
+  "games": [
+    {
+      "game": "minecraft",
+      "role": "host",
+      "label": "Minecraft",
+      "mc": "1.21.11",
+      "loader": "fabric@0.19.5",
+      "java": "21"
+    },
+    {
+      "game": "ultrakill",
+      "role": "guest",
+      "label": "ULTRAKILL",
+      "engine": "Unity (Mono) + BepInEx 5 plugin",
+      "apps": {
+        "steam": "1229490"
+      }
+    }
+  ],
+  "requires": [
+    {
+      "id": "bepinex",
+      "version": "5.4.23.5",
+      "license": "LGPL-2.1",
+      "page": "https://github.com/BepInEx/BepInEx/releases/tag/v5.4.23.5",
+      "source": {
+        "url": "file:///FIXTURE/bepinex-mrpack/BepInEx_win_x64_5.4.23.5.zip",
+        "sha256": "5280f5f7ae1750cf63797347c268253fe7476b9249c3f10149467d0a147b0b53"
+      }
+    },
+    {
+      "id": "fabric-loader",
+      "version": "0.19.5"
+    }
+  ],
+  "install": [
+    {
+      "game": "ultrakill",
+      "strategy": "game-dir-snapshot",
+      "loader": "bepinex",
+      "files": [
+        {
+          "src": "BepInEx_win_x64_5.4.23.5.zip",
+          "dst": "{game}",
+          "unpack": true,
+          "contents": [
+            {
+              "path": ".doorstop_version",
+              "sha256": "7838cbd39728839f87e7a6b70ac3b08932243cf111241237fd9b6654630b5bcf"
+            },
+            {
+              "path": "changelog.txt",
+              "sha256": "37be8bcca316fade618d7f42b17cfed4a4e7c2923c9046ba5c0dd92e7b7da506"
+            },
+            {
+              "path": "doorstop_config.ini",
+              "sha256": "f1b17f3ec14e505ef2e3d043bacaa0c66bbc9baa678e2f1bdbacc0b0440faf85"
+            },
+            {
+              "path": "winhttp.dll",
+              "sha256": "8c577f306ad725845035c525999c186b1736f23162c4c677fc71bd2a4c6656fd"
+            },
+            {
+              "path": "BepInEx/core/0Harmony.dll",
+              "sha256": "b078b72cdf80c3ab4358db8c2bee5334a0a3cb3d7fb7208d3c6cc1af1c0effbf"
+            },
+            {
+              "path": "BepInEx/core/BepInEx.dll",
+              "sha256": "3dba669211b4d94c16b0ab22706ea04ac4fe9d9db96395f6e7a6f54dc8b080fb"
+            },
+            {
+              "path": "BepInEx/core/BepInEx.Preloader.dll",
+              "sha256": "a469aeae22d2c98502a46e6cfb0d3a97b3056976dfb7ad3174b0f1d9f100fbe0"
+            },
+            {
+              "path": "BepInEx/core/Mono.Cecil.dll",
+              "sha256": "6255288e5028901ebfd796cdb3df85e346bcf7d6e1b1dbee8c9de5ebd169bf38"
+            },
+            {
+              "path": "BepInEx/core/MonoMod.Utils.dll",
+              "sha256": "086a067c928ceac7487356bce4a50b996733305265c45d8cc8532d1de2eb748d"
+            }
+          ],
+          "url": "file:///FIXTURE/bepinex-mrpack/BepInEx_win_x64_5.4.23.5.zip",
+          "sha256": "5280f5f7ae1750cf63797347c268253fe7476b9249c3f10149467d0a147b0b53",
+          "size": 1414
+        },
+        {
+          "src": "bepinex-mrpack-ultrakill.zip",
+          "dst": "{game}/BepInEx/plugins/Bridge",
+          "unpack": true,
+          "contents": [
+            {
+              "path": "LICENSE.txt",
+              "sha256": "1f43bd04e56bf576a7dc6d2c8ba783678896a2a2b61eed2a4cd30ba382e69639"
+            },
+            {
+              "path": "Bridge.dll",
+              "sha256": "00fbcdb66649fb28699fb292ca32227be509d88273efab460ac9ee42f034e6bc"
+            }
+          ],
+          "url": "file:///FIXTURE/bepinex-mrpack/bepinex-mrpack-ultrakill.zip",
+          "sha256": "f9bd25627b583ae308bac635aa081d602a4fda05528dbb30bf458a5722053503",
+          "size": 260
+        }
+      ]
+    },
+    {
+      "game": "minecraft",
+      "strategy": "mrpack",
+      "pack": {
+        "src": "bepinex-mrpack.mrpack",
+        "url": "file:///FIXTURE/bepinex-mrpack/bepinex-mrpack.mrpack",
+        "sha256": "46b5400436409fea8f035e4f65a953db07f544cea3365f3043aaead1d132f29b",
+        "size": 872
+      }
+    }
+  ],
+  "launch": [
+    {
+      "game": "minecraft"
+    }
+  ],
+  "files": [
+    {
+      "name": "BepInEx_win_x64_5.4.23.5.zip",
+      "url": "file:///FIXTURE/bepinex-mrpack/BepInEx_win_x64_5.4.23.5.zip",
+      "sha256": "5280f5f7ae1750cf63797347c268253fe7476b9249c3f10149467d0a147b0b53",
+      "size": 1414
+    },
+    {
+      "name": "bepinex-mrpack-ultrakill.zip",
+      "url": "file:///FIXTURE/bepinex-mrpack/bepinex-mrpack-ultrakill.zip",
+      "sha256": "f9bd25627b583ae308bac635aa081d602a4fda05528dbb30bf458a5722053503",
+      "size": 260
+    },
+    {
+      "name": "bepinex-mrpack.mrpack",
+      "url": "file:///FIXTURE/bepinex-mrpack/bepinex-mrpack.mrpack",
+      "sha256": "46b5400436409fea8f035e4f65a953db07f544cea3365f3043aaead1d132f29b",
+      "size": 872
+    }
+  ],
+  "source": {
+    "repo": "https://github.com/example/bepinex-mrpack",
+    "license": "MIT AND LGPL-2.1",
+    "upstream_license": "MIT",
+    "tag": "v0.1.0",
+    "commit": "0000000000000000000000000000000000000000",
+    "hosted": "https://github.com/SIGFAI/bepinex-mrpack",
+    "bundled": [
+      {
+        "name": "BepInEx",
+        "version": "5.4.23.5",
+        "repo": "https://github.com/BepInEx/BepInEx",
+        "license": "LGPL-2.1"
+      }
+    ]
+  },
+  "media": {},
+  "built_by": {
+    "author": "example",
+    "authors": [
+      "example"
+    ],
+    "packaged_by": "SIGF"
+  },
+  "idea_by": "example",
+  "built_at": "2026-01-01T00:00:00.000Z",
+  "status": "beta"
+}

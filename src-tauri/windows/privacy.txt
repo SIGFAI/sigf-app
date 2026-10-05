@@ -1,0 +1,17 @@
+SIGF and your privacy
+
+SIGF has no account, no ads, no telemetry, no analytics and no crash reports. It never reads your store logins, passwords or tokens.
+
+What SIGF sends, and to whom:
+
+- sigf.ai (SIGF): the mashup catalog and the list of mashups being built when the app starts, and a mashup's recipe when you install it. No account, no identifier.
+- Steam, Epic Games and Modrinth image servers: pictures of the games and mashups on screen. These servers can tell which games are shown. You can turn this off.
+- Steam store search: the name of a game that has no picture, to find one. You can turn this off.
+- sigf.ai lobbies: while the Lobbies tab or "Play with friends" is open, the games you own that SIGF has mashups for, so you only see lobbies you can join. You can turn this off: SIGF then gets every public lobby and picks yours on your PC.
+- sigf.ai, only when you host a lobby: your display name, the lobby settings and the join address. SIGF asks before it puts your PC's local network (LAN) address in it. Anyone with the invite link can see the address. sigf.ai keeps a salted hash of your IP address with the lobby to limit abuse.
+- GitHub and Modrinth: file downloads, only when you install a mashup or join a lobby.
+- Microsoft: only on a PC without WebView2, this installer downloads it.
+
+Your choice: at the end of this installation, SIGF asks whether to allow the requests you can turn off. The first time it starts, it shows each choice again before it sends anything but the catalog request. You can change your choices any time under Privacy in the app.
+
+Full privacy policy: https://sigf.ai/privacy

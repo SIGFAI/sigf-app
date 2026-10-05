@@ -1,0 +1,117 @@
+{
+  "id": "sigf/gta5-blocky",
+  "version": "1.0.0",
+  "name": "Blocky Los Santos",
+  "tagline": "Test fixture.",
+  "kind": "passthrough",
+  "games": [
+    {
+      "game": "gta5",
+      "role": "host",
+      "engine": null,
+      "apps": {
+        "steam": "271590"
+      }
+    },
+    {
+      "game": "minecraft",
+      "role": "guest",
+      "label": "minecraft",
+      "mc": "26.3",
+      "loader": "fabric@0.19.5"
+    }
+  ],
+  "requires": [
+    {
+      "id": "fabric-loader"
+    },
+    {
+      "id": "scripthookv"
+    },
+    {
+      "id": "reshade"
+    }
+  ],
+  "install": [
+    {
+      "game": "gta5",
+      "strategy": "game-dir-snapshot",
+      "files": [
+        {
+          "src": "gta5-blocky-gta5.zip",
+          "dst": "{game}",
+          "unpack": true,
+          "contents": [
+            {
+              "path": "MCPassthrough.asi",
+              "sha256": "eda19aa5dfb1070a54f70edd633f1639020376b130bb2f3a57988776352b89d7"
+            },
+            {
+              "path": "reshade-shaders/Shaders/MCPassthrough.fx",
+              "sha256": "6956e1dffd6851cfa0b5461772d12f1dd7d22676f5eee2aad3ae7c0b630d5c80"
+            }
+          ],
+          "url": "file:///FIXTURE/gta5-minecraft/gta5-blocky-gta5.zip",
+          "sha256": "e01ecaf318b9d11c1e8563b0f6691cf25824559fd4614b6b43fecaf58f1835e9",
+          "size": 293
+        }
+      ]
+    },
+    {
+      "game": "minecraft",
+      "strategy": "mrpack",
+      "pack": {
+        "src": "gta5-blocky.mrpack",
+        "url": "file:///FIXTURE/gta5-minecraft/gta5-blocky.mrpack",
+        "sha256": "296d1083dee3b6487e5b0ec4762574ab889a0323f1758afe4664651d06564ff6",
+        "size": 722
+      }
+    }
+  ],
+  "launch": [
+    {
+      "game": "minecraft",
+      "wait": "port:25599"
+    },
+    {
+      "game": "gta5",
+      "args": []
+    }
+  ],
+  "files": [
+    {
+      "name": "gta5-blocky.mrpack",
+      "url": "file:///FIXTURE/gta5-minecraft/gta5-blocky.mrpack",
+      "sha256": "296d1083dee3b6487e5b0ec4762574ab889a0323f1758afe4664651d06564ff6",
+      "size": 722
+    },
+    {
+      "name": "gta5-blocky-gta5.zip",
+      "url": "file:///FIXTURE/gta5-minecraft/gta5-blocky-gta5.zip",
+      "sha256": "e01ecaf318b9d11c1e8563b0f6691cf25824559fd4614b6b43fecaf58f1835e9",
+      "size": 293
+    }
+  ],
+  "source": {
+    "repo": "https://github.com/SIGFAI/gta5-blocky",
+    "license": "MIT"
+  },
+  "media": {},
+  "built_by": {
+    "agent": "SIGF"
+  },
+  "idea_by": "example",
+  "kit": {
+    "id": "crossover-gta5-minecraft",
+    "status": null
+  },
+  "built_at": "2026-01-01T00:00:00.000Z",
+  "server": {
+    "game": "minecraft",
+    "mc": "26.3",
+    "loader": "fabric@0.19.5",
+    "ram_gb": 2,
+    "max_players": 10,
+    "pack": "gta5-blocky.mrpack"
+  }
+}

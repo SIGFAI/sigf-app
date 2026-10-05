@@ -1,0 +1,69 @@
+{
+  "id": "sigf/minecraft-banana",
+  "version": "1.0.0",
+  "name": "Banana Blocks",
+  "tagline": "Test fixture.",
+  "kind": "mod",
+  "games": [
+    {
+      "game": "minecraft",
+      "role": "host",
+      "engine": "Minecraft Java 26.3 + Fabric Loader 0.19.5",
+      "mc": "26.3",
+      "loader": "fabric@0.19.5"
+    }
+  ],
+  "requires": [
+    {
+      "id": "fabric-loader"
+    }
+  ],
+  "install": [
+    {
+      "game": "minecraft",
+      "strategy": "mrpack",
+      "pack": {
+        "src": "minecraft-banana.mrpack",
+        "url": "file:///FIXTURE/minecraft/minecraft-banana.mrpack",
+        "sha256": "0933a3020b071fb48429df2cd4a79067a390adde57864c5385d51080e5fa9720",
+        "size": 709
+      }
+    }
+  ],
+  "launch": [
+    {
+      "game": "minecraft",
+      "args": []
+    }
+  ],
+  "files": [
+    {
+      "name": "minecraft-banana.mrpack",
+      "url": "file:///FIXTURE/minecraft/minecraft-banana.mrpack",
+      "sha256": "0933a3020b071fb48429df2cd4a79067a390adde57864c5385d51080e5fa9720",
+      "size": 709
+    }
+  ],
+  "source": {
+    "repo": "https://github.com/SIGFAI/minecraft-banana",
+    "license": "MIT"
+  },
+  "media": {},
+  "built_by": {
+    "agent": "SIGF"
+  },
+  "idea_by": "example",
+  "kit": {
+    "id": "minecraft",
+    "status": null
+  },
+  "built_at": "2026-01-01T00:00:00.000Z",
+  "server": {
+    "game": "minecraft",
+    "mc": "26.3",
+    "loader": "fabric@0.19.5",
+    "ram_gb": 2,
+    "max_players": 10,
+    "pack": "minecraft-banana.mrpack"
+  }
+}

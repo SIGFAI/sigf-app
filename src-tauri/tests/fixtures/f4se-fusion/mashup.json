@@ -1,0 +1,115 @@
+{
+  "id": "sigf/f4se-fusion",
+  "version": "0.1.0",
+  "name": "F4SE Fusion",
+  "tagline": "Test fixture.",
+  "kind": "passthrough",
+  "games": [
+    {
+      "game": "fallout4",
+      "role": "host",
+      "engine": "Fallout 4 + F4SE plugin",
+      "apps": {
+        "steam": "377160"
+      }
+    },
+    {
+      "game": "minecraft",
+      "role": "guest",
+      "label": "Minecraft",
+      "mc": "26.3",
+      "loader": "fabric@0.19.5",
+      "java": "25"
+    }
+  ],
+  "requires": [
+    {
+      "id": "f4se",
+      "page": "https://f4se.silverlock.org/",
+      "note": "start Fallout 4 with f4se_loader.exe"
+    },
+    {
+      "id": "fabric-loader",
+      "version": "0.19.5"
+    }
+  ],
+  "install": [
+    {
+      "game": "fallout4",
+      "strategy": "game-dir-snapshot",
+      "files": [
+        {
+          "src": "f4se-fusion-fallout4.zip",
+          "dst": "{game}/Data",
+          "unpack": true,
+          "url": "file:///FIXTURE/f4se-fusion/f4se-fusion-fallout4.zip",
+          "sha256": "3a8411a0bc0f1169dc99f315c9bde3e9ab7111b039a8b5690f75c184abcd0433",
+          "size": 735
+        }
+      ]
+    },
+    {
+      "game": "minecraft",
+      "strategy": "mrpack",
+      "pack": {
+        "src": "f4se-fusion.mrpack",
+        "url": "file:///FIXTURE/f4se-fusion/f4se-fusion.mrpack",
+        "sha256": "7735b671d0db26847043b50c8d82cb59dca51ed0a0c9229fe1dc301af8be3f0d",
+        "size": 864
+      }
+    }
+  ],
+  "launch": [
+    {
+      "game": "minecraft"
+    },
+    {
+      "game": "fallout4",
+      "args": [],
+      "exe": "f4se_loader.exe"
+    }
+  ],
+  "files": [
+    {
+      "name": "f4se-fusion-fallout4.zip",
+      "url": "file:///FIXTURE/f4se-fusion/f4se-fusion-fallout4.zip",
+      "sha256": "3a8411a0bc0f1169dc99f315c9bde3e9ab7111b039a8b5690f75c184abcd0433",
+      "size": 735
+    },
+    {
+      "name": "f4se-fusion.mrpack",
+      "url": "file:///FIXTURE/f4se-fusion/f4se-fusion.mrpack",
+      "sha256": "7735b671d0db26847043b50c8d82cb59dca51ed0a0c9229fe1dc301af8be3f0d",
+      "size": 864
+    }
+  ],
+  "source": {
+    "repo": "https://github.com/example/f4se-fusion",
+    "license": "MIT AND GPL-3.0",
+    "upstream_license": "MIT",
+    "tag": "v0.1.0",
+    "commit": "0000000000000000000000000000000000000000",
+    "hosted": "https://github.com/SIGFAI/f4se-fusion",
+    "rebuilt": {
+      "file": "F4Fusion.dll"
+    }
+  },
+  "media": {},
+  "built_by": {
+    "author": "example",
+    "authors": [
+      "example"
+    ],
+    "packaged_by": "SIGF"
+  },
+  "idea_by": "example",
+  "built_at": "2026-01-01T00:00:00.000Z",
+  "server": {
+    "game": "minecraft",
+    "mc": "26.3",
+    "loader": "fabric@0.19.5",
+    "ram_gb": 2,
+    "max_players": 10,
+    "pack": "f4se-fusion.mrpack"
+  }
+}

@@ -1,0 +1,185 @@
+name: release
+
+on:
+  push:
+    tags: ['v*.*.*']   # v1.2.3, and pre-releases such as v1.2.3-rc.1
+
+permissions:
+  contents: write        # create the release
+  id-token: write        # Sigstore OIDC for attestations
+  attestations: write    # store the attestation
+  actions: read          # SignPath reads the workflow artifact
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  RUST_VERSION: 1.99.0   # keep equal to rust-toolchain.toml
+  NODE_VERSION: 22.12.0  # keep equal to .nvmrc
+  SIGNED: ${{ vars.SIGNPATH_ENABLED == 'true' }}
+
+jobs:
+  windows:
+    runs-on: windows-2025   # GitHub-hosted: SignPath refuses artifacts from self-hosted runners for OSS projects
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Tag must match the app version
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          TAG="${TAG%%-*}"   # a pre-release tag (v1.2.3-rc.1) builds version 1.2.3
+          for v in "$(node -p "require('./package.json').version")" \
+                   "$(node -p "require('./src-tauri/tauri.conf.json').version")" \
+                   "$(grep -m1 '^version' src-tauri/Cargo.toml | cut -d'"' -f2)"; do
+            [ "$v" = "$TAG" ] || { echo "version $v != tag $TAG"; exit 1; }
+          done
+          echo "VERSION=$TAG" >> "$GITHUB_ENV"
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable branch, 2026-10-05
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+          targets: x86_64-pc-windows-msvc
+
+      - name: Reproducibility settings
+        run: |
+          echo "SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)" >> "$GITHUB_ENV"
+          echo "RUSTFLAGS=--remap-path-prefix=$(cygpath -w "$GITHUB_WORKSPACE")=/build --remap-path-prefix=$(cygpath -w "$USERPROFILE")\\.cargo=/cargo -C link-arg=/Brepro" >> "$GITHUB_ENV"
+          echo "CARGO_INCREMENTAL=0" >> "$GITHUB_ENV"
+
+      - name: Install JS dependencies and build the UI (generate_context! needs dist/)
+        run: npm ci && npm run build
+
+      - name: Test
+        run: cargo test --locked --manifest-path src-tauri/Cargo.toml
+
+      # ---- 1. Build the app exe only (no installer yet) ----
+      - name: Build app exe
+        run: npx tauri build --ci --no-bundle -- --locked
+
+      - name: Keep the unsigned exe (reproducibility target)
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/out" "$GITHUB_WORKSPACE/to-sign/exe"
+          cp src-tauri/target/release/sigf-app.exe "$GITHUB_WORKSPACE/out/sigf-app-${GITHUB_REF_NAME}-unsigned.exe"
+          cp src-tauri/target/release/sigf-app.exe "$GITHUB_WORKSPACE/to-sign/exe/sigf-app.exe"
+
+      # ---- 2. Sign the app exe through SignPath ----
+      - name: Upload unsigned exe for signing
+        id: upload-exe
+        if: env.SIGNED == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: unsigned-exe
+          path: to-sign/exe/sigf-app.exe
+          if-no-files-found: error
+
+      - name: Sign app exe (SignPath)
+        if: env.SIGNED == 'true'
+        uses: signpath/github-action-submit-signing-request@c92b958760219087e01f8d67a1669ed57afe2627 # v2
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_POLICY_SLUG }}
+          artifact-configuration-slug: app-exe
+          github-artifact-id: ${{ steps.upload-exe.outputs.artifact-id }}
+          wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: 3600   # a person approves each release by hand
+          output-artifact-directory: signed/exe
+          parameters: |
+            version: "${{ env.VERSION }}"
+
+      - name: Put the signed exe back for bundling
+        if: env.SIGNED == 'true'
+        run: cp signed/exe/sigf-app.exe src-tauri/target/release/sigf-app.exe
+
+      # ---- 3. Bundle the NSIS installer around the (signed) exe ----
+      # `tauri bundle` packs the existing release build without recompiling (Tauri CLI 2.x). Check after the first
+      # run that the exe inside the installer is the signed one (hash it after a silent install).
+      - name: Build NSIS installer
+        run: |
+          npx tauri bundle --ci --bundles nsis
+          mkdir -p "$GITHUB_WORKSPACE/to-sign/installer"
+          cp src-tauri/target/release/bundle/nsis/SIGF_${VERSION}_x64-setup.exe "$GITHUB_WORKSPACE/to-sign/installer/"
+          # MSI too, if wanted: add "msi" to bundle.targets (needs WiX, preinstalled on GitHub's Windows runners)
+          # and to --bundles, and copy bundle/msi/*.msi here.
+
+      # ---- 4. Sign the installer ----
+      - name: Upload unsigned installer for signing
+        id: upload-installer
+        if: env.SIGNED == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: unsigned-installer
+          path: to-sign/installer/
+          if-no-files-found: error
+
+      - name: Sign installer (SignPath)
+        if: env.SIGNED == 'true'
+        uses: signpath/github-action-submit-signing-request@c92b958760219087e01f8d67a1669ed57afe2627 # v2
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_POLICY_SLUG }}
+          artifact-configuration-slug: installer
+          github-artifact-id: ${{ steps.upload-installer.outputs.artifact-id }}
+          wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: 3600
+          output-artifact-directory: signed/installer
+          parameters: |
+            version: "${{ env.VERSION }}"
+
+      # ---- 5. Checksums, build info, provenance, release ----
+      - name: Collect artifacts and SHA256SUMS
+        run: |
+          if [ "$SIGNED" = true ]; then
+            cp signed/installer/*.exe "$GITHUB_WORKSPACE/out/"
+            cp signed/exe/sigf-app.exe "$GITHUB_WORKSPACE/out/sigf-app-${GITHUB_REF_NAME}.exe"
+          else
+            cp to-sign/installer/*.exe "$GITHUB_WORKSPACE/out/"
+          fi
+          {
+            echo "tag: $GITHUB_REF_NAME"; echo "commit: $GITHUB_SHA"; echo "runner: $ImageOS $ImageVersion"
+            echo "signed: $SIGNED"; rustc -Vv; echo "node $(node -v)"; echo "SOURCE_DATE_EPOCH=$SOURCE_DATE_EPOCH"
+          } > "$GITHUB_WORKSPACE/out/BUILDINFO.txt"
+          cd "$GITHUB_WORKSPACE/out"
+          sha256sum *.exe BUILDINFO.txt > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Attest build provenance
+        if: ${{ !github.event.repository.private }}   # GitHub Free: attestations need a public repository
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: |
+            out/*.exe
+            out/SHA256SUMS
+
+      - name: Keep the built files as a workflow artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: sigf-app-${{ github.ref_name }}
+          path: out/
+          if-no-files-found: error
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        working-directory: out
+        run: |
+          PRE=""; case "$GITHUB_REF_NAME" in *-*) PRE="--prerelease";; esac
+          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --verify-tag $PRE \
+            --title "SIGF $GITHUB_REF_NAME" \
+            --notes "Verify: \`gh attestation verify <file> --repo $GITHUB_REPOSITORY\` and compare SHA256SUMS. [Code signing policy](https://github.com/$GITHUB_REPOSITORY/blob/main/CODE-SIGNING-POLICY.md)" \
+            *.exe SHA256SUMS BUILDINFO.txt
