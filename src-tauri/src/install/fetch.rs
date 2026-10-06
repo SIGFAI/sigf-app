@@ -122,12 +122,20 @@ pub struct FetchOpts {
     pub allow_local: bool,
     /// The download is refused once it grows past this (the recipe's declared size, else `check::MAX_FILE_BYTES`).
     pub max_bytes: u64,
+    /// A player build's download (toolchain, script, inputs): may also start on `check::BUILD_DOWNLOAD_HOSTS` and
+    /// follow redirects to `check::BUILD_REDIRECT_HOSTS`. Which URLs are allowed at all is still the caller's rule.
+    pub build: bool,
 }
 
 impl FetchOpts {
     /// Capped at `declared` bytes when the recipe gives a size, else at `check::MAX_FILE_BYTES`.
     pub fn new(allow_local: bool, declared: Option<u64>) -> Self {
-        Self { allow_local, max_bytes: declared.filter(|d| *d > 0).unwrap_or(check::MAX_FILE_BYTES).min(check::MAX_FILE_BYTES) }
+        Self { allow_local, max_bytes: declared.filter(|d| *d > 0).unwrap_or(check::MAX_FILE_BYTES).min(check::MAX_FILE_BYTES), build: false }
+    }
+
+    /// A player build's download (see `build`).
+    pub fn for_build(allow_local: bool, declared: Option<u64>) -> Self {
+        Self { build: true, ..Self::new(allow_local, declared) }
     }
 }
 
@@ -138,11 +146,11 @@ const TOTAL_TIMEOUT: Duration = Duration::from_secs(3 * 60 * 60);
 const MAX_REDIRECTS: usize = 5;
 
 /// The download client: https only, redirects only to `check::REDIRECT_HOSTS`, an idle timeout per read.
-fn client() -> Result<reqwest::blocking::Client, reqwest::Error> {
-    let policy = reqwest::redirect::Policy::custom(|a| {
+fn client(build: bool) -> Result<reqwest::blocking::Client, reqwest::Error> {
+    let policy = reqwest::redirect::Policy::custom(move |a| {
         if a.previous().len() >= MAX_REDIRECTS {
             a.error("too many redirects")
-        } else if check::redirect_ok(a.url()) {
+        } else if if build { check::build_redirect_ok(a.url()) } else { check::redirect_ok(a.url()) } {
             a.follow()
         } else {
             let to = a.url().host_str().unwrap_or("?").to_string();
@@ -240,11 +248,12 @@ pub fn fetch_pinned(
             (Box::new(f), len)
         }
         Location::Http(url) => {
-            if !check::canonical_https(&url).is_some_and(|u| check::download_start_ok(&u)) {
+            let start_ok = |u: &reqwest::Url| if opts.build { check::build_start_ok(u) } else { check::download_start_ok(u) };
+            if !check::canonical_https(&url).is_some_and(|u| start_ok(&u)) {
                 return Err(refused("only https downloads from GitHub releases or Modrinth's CDN".into()));
             }
             let dl = |e: reqwest::Error| InstallError::Download { url: url.clone(), message: e.to_string() };
-            let resp = client().map_err(dl)?.get(&url).send().and_then(|r| r.error_for_status()).map_err(dl)?;
+            let resp = client(opts.build).map_err(dl)?.get(&url).send().and_then(|r| r.error_for_status()).map_err(dl)?;
             let len = resp.content_length();
             (Box::new(resp), len)
         }

@@ -2,6 +2,8 @@
 //! Contract: docs/RECIPE-FORMAT.md sections 1, 3, 4. Everything lives under one base dir (`SIGF_HOME`, default
 //! `%LOCALAPPDATA%\SIGF`): `cache/`, `profiles/`, `snapshots/`, `installed.json`.
 
+pub mod build;
+pub mod byo;
 pub mod check;
 pub mod fetch;
 pub mod mrpack;
@@ -9,6 +11,7 @@ pub mod paths;
 pub mod recipe;
 pub mod registry;
 pub mod snapshot;
+pub mod tools;
 
 pub use mrpack::Prism;
 pub use recipe::{Recipe, Strategy};
@@ -43,6 +46,15 @@ pub enum InstallError {
     NotInstalled { id: String },
     #[error("{path}: {message}")]
     Io { path: String, message: String },
+    /// The recipe uses the player's own copy of a game file, and none was found or picked.
+    #[error("uses your own copy of {label}: SIGF never ships or downloads it, pick your file first")]
+    OwnCopyMissing { game: String, label: String },
+    /// The file found or picked is not a dump the recipe accepts (another region, a modified or bad dump).
+    #[error("{file} is not a {label} dump this mashup accepts ({sha1}): pick a clean, unmodified dump")]
+    OwnCopyMismatch { game: String, label: String, file: String, sha1: String },
+    /// A player build failed; `log` is the saved build log.
+    #[error("building {label} failed: {message}")]
+    BuildFailed { id: String, label: String, message: String, log: Option<String> },
 }
 
 impl InstallError {
@@ -73,6 +85,8 @@ impl From<InstallError> for CommandError {
 pub enum Phase {
     Download,
     Verify,
+    /// A player build runs (toolchain, then the script).
+    Build,
     Install,
     Ready,
 }
@@ -108,10 +122,17 @@ pub struct Engine {
     /// Dev mode: recipes may name `file://` URLs and local paths. Default: `check::dev_local_recipes()` (the
     /// `SIGF_DEV_LOCAL_RECIPES=1` flag of the example CLI and the tests); the app's own handlers set it false.
     pub allow_local: bool,
+    /// The player's own copies for this install, by `own_copies[].game`: found by `byo::search` or picked by the
+    /// player. Each one is checked against the recipe's SHA-1s before anything is downloaded.
+    pub own: HashMap<String, byo::OwnSource>,
+    /// Dev mode only (`allow_local`): toolchain ids -> a local folder used instead of the pinned download (tests).
+    pub tool_dirs: HashMap<String, PathBuf>,
 }
 
 /// Share of the bar given to fetching; the rest is install.
 const FETCH_PCT: f64 = 70.0;
+/// Share of the bar given to player builds, after fetching (when the recipe has any).
+const BUILD_PCT: f64 = 15.0;
 
 struct Reporter<'a> {
     id: String,
@@ -165,7 +186,7 @@ struct StepPlan<'a> {
 
 impl Engine {
     pub fn new(home: impl Into<PathBuf>, prism: Option<Prism>) -> Self {
-        Self { home: home.into(), prism, docs: docs_dir(), allow_local: check::dev_local_recipes() }
+        Self { home: home.into(), prism, docs: docs_dir(), allow_local: check::dev_local_recipes(), own: HashMap::new(), tool_dirs: HashMap::new() }
     }
 
     pub fn from_env(prism: Option<Prism>) -> Self {
@@ -183,6 +204,9 @@ impl Engine {
     }
     fn staging_dir(&self, slug: &str) -> PathBuf {
         self.home.join("staging").join(slug)
+    }
+    fn build_dir(&self, slug: &str) -> PathBuf {
+        self.home.join("build").join(slug)
     }
 
     pub fn installed(&self) -> Vec<InstalledMod> {
@@ -359,6 +383,9 @@ impl Engine {
             plans.push(self.plan_step(recipe, &slug, step, game_dirs)?);
         }
 
+        // Bring your own copy: every copy the recipe needs is on this PC and is a dump it accepts, before any download.
+        self.check_byo(recipe)?;
+
         // Every download must be allowed (check::UrlPolicy) and within the size cap before the first one starts.
         let policy = check::UrlPolicy::for_recipe(recipe, self.allow_local);
         let jobs = check::planned_downloads(recipe);
@@ -366,6 +393,13 @@ impl Engine {
             policy.check(url, false)?;
             if size.is_some_and(|s| s > check::MAX_FILE_BYTES) {
                 return Err(InstallError::recipe(format!("{url} is larger than {} bytes", check::MAX_FILE_BYTES)));
+            }
+        }
+        for (url, _, size, script) in check::planned_build_downloads(recipe) {
+            policy.check_build(&url, script)?;
+            let max = if script { check::BUILD_SCRIPT_MAX_BYTES } else { check::BUILD_INPUT_MAX_BYTES };
+            if !size.is_some_and(|s| s <= max) {
+                return Err(InstallError::recipe(format!("{url}: a build file needs its size, at most {max} bytes")));
             }
         }
 
@@ -386,14 +420,27 @@ impl Engine {
         }
         let cached = |sha: &str| fetched.get(&sha.to_ascii_lowercase()).cloned().expect("fetched above");
 
+        // Player builds run before anything is installed: a failed build leaves the PC as it was.
+        let built = match self.run_builds(recipe, &slug, &mut rep) {
+            Ok(b) => b,
+            Err(e) => {
+                let _ = std::fs::remove_dir_all(self.build_dir(&slug));
+                return Err(e);
+            }
+        };
+
         if self.installed().iter().any(|m| m.id == recipe.id) {
-            self.restore(&recipe.id, false)?;
+            if let Err(e) = self.restore(&recipe.id, false) {
+                let _ = std::fs::remove_dir_all(self.build_dir(&slug));
+                return Err(e);
+            }
         }
 
         let steps = recipe.install.len().max(1) as f64;
         let mut done: Vec<InstalledGame> = vec![];
         for (i, (step, plan)) in recipe.install.iter().zip(&plans).enumerate() {
-            rep.emit(Phase::Install, FETCH_PCT + i as f64 / steps * (99.0 - FETCH_PCT));
+            let built_pct = if recipe.player_build.is_empty() { 0.0 } else { BUILD_PCT };
+            rep.emit(Phase::Install, FETCH_PCT + built_pct + i as f64 / steps * (99.0 - FETCH_PCT - built_pct));
             let r = match step.strategy {
                 Strategy::Mrpack => self.install_mrpack(&slug, &recipe.id, step, &cached(&step.pack.as_ref().unwrap().sha256), &policy),
                 _ => self.install_files(&slug, step, plan, &cached),
@@ -411,10 +458,26 @@ impl Engine {
                     }
                     let _ = std::fs::remove_dir_all(self.home.join("profiles").join(&slug));
                     let _ = std::fs::remove_dir_all(self.staging_dir(&slug));
+                    let _ = std::fs::remove_dir_all(self.build_dir(&slug));
                     return Err(e);
                 }
             }
         }
+        // The player's own copies and the built files go into the folders just written ({instance}, {app}).
+        let placed = self.place_byo(recipe, &slug, &done, &built);
+        let _ = std::fs::remove_dir_all(self.build_dir(&slug));
+        let _ = std::fs::remove_dir(self.home.join("build"));
+        let placed = match placed {
+            Ok(p) => p,
+            Err(e) => {
+                for g in &done {
+                    let _ = self.undo_game(&recipe.id, g, true);
+                }
+                let _ = std::fs::remove_dir_all(self.home.join("profiles").join(&slug));
+                let _ = std::fs::remove_dir_all(self.staging_dir(&slug));
+                return Err(e);
+            }
+        };
         let _ = std::fs::remove_dir(self.staging_dir(&slug));
         let _ = std::fs::remove_dir(self.home.join("staging"));
 
@@ -427,11 +490,13 @@ impl Engine {
                 .map(|d| d.as_secs())
                 .unwrap_or(0),
             games: done,
+            placed,
         };
         let mut all = self.installed();
         all.retain(|m| m.id != recipe.id);
         all.push(entry.clone());
         if let Err(e) = registry::save(&self.home, &all) {
+            remove_placed(&entry.placed);
             for g in &entry.games {
                 let _ = self.undo_game(&recipe.id, g, true);
             }
@@ -630,6 +695,7 @@ impl Engine {
             Some(m) => m.games.clone(),
             None => self.orphans(id, &slug),
         };
+        let placed = all.iter().find(|m| m.id == id).map(|m| m.placed.clone()).unwrap_or_default();
         if games.is_empty() && !all.iter().any(|m| m.id == id) {
             return Err(InstallError::NotInstalled { id: id.to_string() });
         }
@@ -644,14 +710,142 @@ impl Engine {
                 return Err(InstallError::Tampered { files: t });
             }
         }
+        // The player's own copies and the files built on this PC go first (they also live in folders deleted below).
+        remove_placed(&placed);
         for g in &games {
             self.undo_game(id, g, true)?;
         }
         let _ = std::fs::remove_dir_all(self.home.join("profiles").join(&slug));
+        let _ = std::fs::remove_dir_all(self.build_dir(&slug));
         let _ = std::fs::remove_dir(self.home.join("snapshots").join(&slug));
         let _ = std::fs::remove_dir_all(self.staging_dir(&slug));
         all.retain(|m| m.id != id);
         registry::save(&self.home, &all)
+    }
+
+    /// `own_copies` and `player_build` checks that need no network: every copy is on this PC (`self.own`) and accepted
+    /// by its SHA-1, every step and tool named exists, every destination is one Restore deletes.
+    fn check_byo(&self, recipe: &Recipe) -> Result<(), InstallError> {
+        let step = |game: &str| recipe.install.iter().find(|s| s.game == game);
+        let to_ok = |to: &str, game: &str| -> Result<(), InstallError> {
+            let s = step(game).ok_or_else(|| InstallError::recipe(format!("no install step for {game}")))?;
+            if check::byo_to_ok(to, s.strategy == Strategy::Mrpack) {
+                Ok(())
+            } else {
+                Err(InstallError::PathTraversal { dst: to.to_string() })
+            }
+        };
+        if recipe.own_copies.len() > check::OWN_COPIES_MAX || recipe.player_build.len() > check::PLAYER_BUILDS_MAX {
+            return Err(InstallError::recipe("too many own copies or player builds"));
+        }
+        for c in &recipe.own_copies {
+            to_ok(&c.to, &c.step)?;
+            if !check::file_name_ok(&c.rom.save_as) {
+                return Err(InstallError::PathTraversal { dst: c.rom.save_as.clone() });
+            }
+            let src = self.own.get(&c.game).ok_or_else(|| InstallError::OwnCopyMissing { game: c.game.clone(), label: c.label.clone() })?;
+            byo::verify(c, src)?;
+        }
+        for b in &recipe.player_build {
+            if b.toolchain.iter().any(|t| tools::find(t).is_none()) {
+                return Err(InstallError::recipe(format!("unknown tool in {}", b.id)));
+            }
+            if !check::file_name_ok(&b.script.name) || b.inputs.iter().any(|i| !check::file_name_ok(&i.name)) {
+                return Err(InstallError::recipe(format!("bad file name in {}", b.id)));
+            }
+            for o in &b.outputs {
+                to_ok(&o.to, &b.step)?;
+                if !check::file_name_ok(&o.name) {
+                    return Err(InstallError::PathTraversal { dst: o.name.clone() });
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Runs every player build (toolchain, then staged inputs, then the script). Returns each build's output folder.
+    fn run_builds(&self, recipe: &Recipe, slug: &str, rep: &mut Reporter) -> Result<Vec<PathBuf>, InstallError> {
+        let mut out = vec![];
+        let n = recipe.player_build.len().max(1) as f64;
+        for (i, b) in recipe.player_build.iter().enumerate() {
+            let base = FETCH_PCT + i as f64 / n * BUILD_PCT;
+            rep.emit(Phase::Build, base);
+            let overrides = if self.allow_local { self.tool_dirs.clone() } else { HashMap::new() };
+            let ready = build::toolchain(&self.home, b, &overrides, &mut |done, total| {
+                if let Some(t) = total.filter(|t| *t > 0) {
+                    rep.emit(Phase::Build, base + done as f64 / t as f64 / n * 5.0);
+                }
+            })?;
+            let dirs = build::Dirs::new(self.build_dir(slug).join(paths::slug(&b.id)));
+            let _ = std::fs::remove_dir_all(&dirs.root);
+            let script = build::stage(b, &dirs, self.allow_local)?;
+            rep.emit(Phase::Build, base + 7.0 / n);
+            if let Err(e) = build::run(b, &dirs, &script, &ready) {
+                // Keep the log where the player (or a bug report) can find it; the work folder goes.
+                let logs = self.home.join("logs");
+                let kept = logs.join(format!("{slug}-{}-build.log", paths::slug(&b.id)));
+                let _ = std::fs::create_dir_all(&logs);
+                let _ = std::fs::copy(dirs.root.join("build.log"), &kept);
+                return Err(match e {
+                    InstallError::BuildFailed { id, label, message, log: Some(_) } => InstallError::BuildFailed { id, label, message, log: Some(path_string(&kept)) },
+                    other => other,
+                });
+            }
+            out.push(dirs.out);
+        }
+        Ok(out)
+    }
+
+    /// The folder an own copy or a build output goes to: `{instance}/...` (the step's Prism instance, as written) or
+    /// `{app}/...` (the step's own SIGF folder), created, and checked to stay inside it.
+    fn byo_dir(&self, to: &str, slug: &str, game: &str, done: &[InstalledGame]) -> Result<PathBuf, InstallError> {
+        let (root, rest) = if let Some(r) = to.strip_prefix("{instance}") {
+            let inst = done
+                .iter()
+                .find(|g| g.game == game && g.strategy == Strategy::Mrpack)
+                .and_then(|g| g.instance.as_ref().and(g.profile_dir.as_ref()))
+                .ok_or_else(|| InstallError::recipe(format!("{to} needs the Prism instance SIGF writes for {game}")))?;
+            (PathBuf::from(inst), r)
+        } else if let Some(r) = to.strip_prefix("{app}") {
+            (self.profile_dir(slug, game), r)
+        } else {
+            return Err(InstallError::PathTraversal { dst: to.to_string() });
+        };
+        std::fs::create_dir_all(&root).map_err(|e| InstallError::io(&root, e))?;
+        let rest = rest.trim_start_matches('/');
+        let dir = if rest.is_empty() { root.clone() } else { resolve_inside(&root, "", rest)?.0 };
+        std::fs::create_dir_all(&dir).map_err(|e| InstallError::io(&dir, e))?;
+        ensure_real_parent_inside(&root, &dir.join("x"), to)?;
+        Ok(dir)
+    }
+
+    /// Copies the player's own copies (checked again while copied) and the built outputs into place. Returns every
+    /// file written, for Restore.
+    fn place_byo(&self, recipe: &Recipe, slug: &str, done: &[InstalledGame], built: &[PathBuf]) -> Result<Vec<String>, InstallError> {
+        let mut placed = vec![];
+        let r = (|| {
+            for c in &recipe.own_copies {
+                let src = self.own.get(&c.game).ok_or_else(|| InstallError::OwnCopyMissing { game: c.game.clone(), label: c.label.clone() })?;
+                let dir = self.byo_dir(&c.to, slug, &c.step, done)?;
+                placed.push(path_string(&byo::place(c, src, &dir)?));
+            }
+            for (b, out) in recipe.player_build.iter().zip(built) {
+                for o in &b.outputs {
+                    let dir = self.byo_dir(&o.to, slug, &b.step, done)?;
+                    let dst = dir.join(&o.name);
+                    std::fs::copy(out.join(&o.name), &dst).map_err(|e| InstallError::io(&dst, e))?;
+                    placed.push(path_string(&dst));
+                }
+            }
+            Ok(())
+        })();
+        match r {
+            Ok(()) => Ok(placed),
+            Err(e) => {
+                remove_placed(&placed);
+                Err(e)
+            }
+        }
     }
 
     /// Snapshots/instances left by an install that crashed before writing its registry entry.
@@ -710,6 +904,13 @@ fn copy_capped(entry: &mut impl std::io::Read, file: &mut std::fs::File, budget:
     }
     *budget -= n;
     Ok(())
+}
+
+/// Deletes the files an install placed outside its downloads (own copies, built outputs). Missing ones are fine.
+fn remove_placed(placed: &[String]) {
+    for p in placed {
+        let _ = std::fs::remove_file(p);
+    }
 }
 
 /// Extracts a zip under `target`; entries whose names escape it (zip slip) abort the install.

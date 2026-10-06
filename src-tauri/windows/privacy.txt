@@ -10,7 +10,8 @@ What SIGF sends, and to whom:
 - sigf.ai lobbies: while the Lobbies tab or "Play with friends" is open, the games you own that SIGF has mashups for, so you only see lobbies you can join. You can turn this off: SIGF then gets every public lobby and picks yours on your PC.
 - sigf.ai, only when you host a lobby: your display name, the lobby settings and the join address. SIGF asks before it puts your PC's local network (LAN) address in it. Anyone with the invite link can see the address. sigf.ai keeps a salted hash of your IP address with the lobby to limit abuse.
 - GitHub: when the app starts and every 6 hours, a check for a newer version of SIGF. Nothing is sent beyond a normal request. An update downloads only when you click "Update and restart".
-- GitHub and Modrinth: file downloads, only when you install a mashup or join a lobby.
+- GitHub and Modrinth: file downloads, only when you install a mashup or join a lobby. A mashup that builds a file on your PC also downloads pinned sources from GitHub and, the first time, a compiler (w64devkit, from GitHub) and Python (from python.org).
+- Nobody: a mashup that uses your own copy of a game file (a ROM you dumped) finds or asks for it on your PC and copies it into its own folder. That file is never uploaded or sent anywhere.
 - Microsoft: only on a PC without WebView2, this installer downloads it.
 
 Your choice: at the end of this installation, SIGF asks whether to allow the requests you can turn off. The first time it starts, it shows each choice again before it sends anything but the catalog request. You can change your choices any time under Privacy in the app.

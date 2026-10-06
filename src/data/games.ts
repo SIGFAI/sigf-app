@@ -30,6 +30,7 @@ export const GAMES: CanonGame[] = [
   { id: 'minecraft', name: 'Minecraft: Java Edition', short: 'Minecraft', minecraft: true, store: 'https://www.minecraft.net/store/minecraft-java-bedrock-edition-pc', hue: 120 },
   { id: 'skyrim', name: 'The Elder Scrolls V: Skyrim Special Edition', short: 'Skyrim', steam: ['489830'], gog: ['1711230643'], store: 'https://store.steampowered.com/app/489830' },
   { id: 'fallout4', name: 'Fallout 4', short: 'Fallout 4', steam: ['377160'], gog: ['1998527297'], store: 'https://store.steampowered.com/app/377160' },
+  { id: 'falloutnv', name: 'Fallout: New Vegas', short: 'New Vegas', steam: ['22380'], store: 'https://store.steampowered.com/app/22380' },
   { id: 'eldenring', name: 'Elden Ring', short: 'Elden Ring', steam: ['1245620'], store: 'https://store.steampowered.com/app/1245620' },
   { id: 'doom', name: 'DOOM + DOOM II', short: 'Doom', steam: ['2280'], gog: ['1440164514'], store: 'https://store.steampowered.com/app/2280' },
   { id: 'tf2', name: 'Team Fortress 2', short: 'TF2', steam: ['440'], store: 'https://store.steampowered.com/app/440' },

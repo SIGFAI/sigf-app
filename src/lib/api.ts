@@ -113,6 +113,10 @@ export async function windowAction(a: 'minimize' | 'toggleMaximize' | 'close') {
 export type Agent = {
   ticker: string; name: string; host: string; guest: string; status: string; live: boolean;
   image?: string; crossover?: boolean; model?: { label: string }; createdAt: string;
+  /** The mix it is building now (it can move on from its first one). */
+  mixNow?: { host: string; guest: string | null; crossover?: boolean } | null;
+  /** Its machine: `frame` is its latest picture (a site path), `progress` the build's steps. */
+  machine?: { state: string; frame: string | null; progress: { done: number; total: number; current: string | null } | null };
 };
 
 /** GET through the Rust core in the app (sigf.ai sends no CORS headers), plain fetch in a browser. */

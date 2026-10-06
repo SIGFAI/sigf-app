@@ -113,6 +113,7 @@ export function Icon({ name, size = 20 }: { name: string; size?: number }) {
     restore: (<><path d="M4 12a8 8 0 1 0 2.4-5.7" /><path d="M4 4v4h4" /></>),
     refresh: (<><path d="M20 12a8 8 0 1 1-2.4-5.7" /><path d="M20 4v4h-4" /></>),
     shield: <path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z" />,
+    tv: (<><rect x="3" y="6" width="18" height="13" rx="2" /><path d="M8 2.5l4 3.5 4-3.5" /><circle cx="12" cy="12.5" r="2" fill="currentColor" stroke="none" /></>),
     live: <circle cx="12" cy="12" r="4" fill="currentColor" stroke="none" />,
     swap: (<><path d="M7 7h11l-3-3M17 17H6l3 3" /></>),
     people: (<><circle cx="9" cy="8.5" r="3" /><path d="M3.5 19c.6-3.2 2.8-5 5.5-5s4.9 1.8 5.5 5" /><circle cx="16.5" cy="9.5" r="2.4" /><path d="M15.5 14.2c2.6-.3 4.5 1.4 5 4.3" /></>),
@@ -129,6 +130,12 @@ export function Icon({ name, size = 20 }: { name: string; size?: number }) {
 
 export const STORE_LABEL: Record<string, string> = { steam: 'Steam', epic: 'Epic', ubisoft: 'Ubisoft', gog: 'GOG', minecraft: 'Minecraft', ea: 'EA' };
 
+/** A compact count: 950, 1.2k, 12k, 3.4M (rounded down, so it never claims more than the real number). */
 export function fmtCount(n: number) {
-  return n >= 1000 ? `${(n / 1000).toFixed(n >= 10000 ? 0 : 1)}k` : String(n);
+  const short = (v: number, unit: string) => `${v >= 10 ? Math.floor(v) : Math.floor(v * 10) / 10}${unit}`;
+  if (n >= 1e6) return short(n / 1e6, 'M');
+  if (n >= 1000) return short(n / 1000, 'k');
+  return String(n);
 }
+/** A download count worth showing: known and above zero. */
+export const shownDownloads = (n: number | undefined): n is number => typeof n === 'number' && Number.isFinite(n) && n > 0;

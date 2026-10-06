@@ -1,5 +1,6 @@
 // The install engine without the UI, for tests on a real PC:
-//   cargo run --example install -- install <mashup.json> [game=<dir> ...]
+//   cargo run --example install -- install <mashup.json> [game=<dir> ...] [own:<game>=<file>[!<zip entry>] ...] [tool:<id>=<dir> ...]
+//   cargo run --example install -- find-own <mashup.json> [<folder> ...]
 //   cargo run --example install -- restore <id> [--force]
 //   cargo run --example install -- list
 //   cargo run --example install -- validate [--packs] <mashup.json> ...
@@ -7,6 +8,9 @@
 // Local recipes (`file://` URLs, local paths) need SIGF_DEV_LOCAL_RECIPES=1; the app itself never allows them.
 // `validate` runs the app's own recipe rule (install::check, not in dev mode) and prints every planned download;
 // with --packs it also downloads each mrpack (hash-checked, into a temp folder) and checks the files it lists.
+// `own:` gives the player's own copy for an `own_copies` entry (checked by SHA-1 like in the app); `find-own` runs the
+// app's search for it (the default folders, or the ones given). `tool:` (dev mode only) uses a local folder instead
+// of a pinned toolchain download (tests).
 
 use sigf_app_lib::{install, scan};
 use std::collections::HashMap;
@@ -22,20 +26,43 @@ fn main() {
     let res = match args.first().map(String::as_str) {
         Some("install") if args.len() >= 2 => {
             let recipe = install::Recipe::parse(&std::fs::read_to_string(&args[1]).expect("read recipe")).expect("parse recipe");
+            let plain = |a: &&String| !a.starts_with("own:") && !a.starts_with("tool:");
             let dirs: HashMap<String, String> =
-                args[2..].iter().filter_map(|a| a.split_once('=')).map(|(k, v)| (k.to_string(), v.to_string())).collect();
+                args[2..].iter().filter(plain).filter_map(|a| a.split_once('=')).map(|(k, v)| (k.to_string(), v.to_string())).collect();
+            let mut engine = engine;
+            for a in &args[2..] {
+                if let Some((game, file)) = a.strip_prefix("own:").and_then(|r| r.split_once('=')) {
+                    let (path, entry) = match file.split_once('!') {
+                        Some((p, e)) => (p, Some(e.to_string())),
+                        None => (file, None),
+                    };
+                    engine.own.insert(game.to_string(), install::byo::OwnSource { path: path.into(), entry });
+                }
+                if let Some((id, dir)) = a.strip_prefix("tool:").and_then(|r| r.split_once('=')) {
+                    engine.tool_dirs.insert(id.to_string(), dir.into());
+                }
+            }
             engine
                 .install(&recipe, &dirs, &mut |p| eprintln!("{:?}", p))
                 .map(|m| println!("{}", serde_json::to_string_pretty(&m).unwrap()))
         }
         Some("restore") if args.len() >= 2 => engine.restore(&args[1], args.iter().any(|a| a == "--force")).map(|_| println!("restored {}", args[1])),
         Some("validate") if args.len() >= 2 => validate(&args[1..]),
+        Some("find-own") if args.len() >= 2 => {
+            let recipe = install::Recipe::parse(&std::fs::read_to_string(&args[1]).expect("read recipe")).expect("parse recipe");
+            let roots: Vec<std::path::PathBuf> = if args.len() > 2 { args[2..].iter().map(Into::into).collect() } else { install::byo::default_roots() };
+            for c in &recipe.own_copies {
+                let f = install::byo::search(c, &roots, install::byo::SearchLimits::default());
+                println!("{}", serde_json::to_string_pretty(&f).unwrap());
+            }
+            Ok(())
+        }
         Some("list") => {
             println!("{}", serde_json::to_string_pretty(&engine.installed()).unwrap());
             Ok(())
         }
         _ => {
-            eprintln!("usage: install <mashup.json> [game=<dir> ...] | restore <id> [--force] | list | validate [--packs] <mashup.json> ...");
+            eprintln!("usage: install <mashup.json> [game=<dir> ...] [own:<game>=<file>[!<entry>] ...] [tool:<id>=<dir> ...] | restore <id> [--force] | list | validate [--packs] <mashup.json> ... | find-own <mashup.json> [<folder> ...]");
             std::process::exit(2);
         }
     };
@@ -64,6 +91,17 @@ fn validate(args: &[String]) -> Result<(), install::InstallError> {
         println!("OK {} {} ({path})", r.id, r.version);
         for (url, _, size) in install::check::planned_downloads(&r) {
             println!("  {url} ({} bytes)", size.map(|s| s.to_string()).unwrap_or_else(|| "?".into()));
+        }
+        for (url, _, size, script) in install::check::planned_build_downloads(&r) {
+            println!("  build {}: {url} ({} bytes)", if script { "script" } else { "input" }, size.map(|s| s.to_string()).unwrap_or_else(|| "?".into()));
+        }
+        for b in &r.player_build {
+            for t in b.toolchain.iter().filter_map(|t| install::tools::find(t)) {
+                println!("  build tool: {} ({} bytes)", t.url, t.size);
+            }
+        }
+        for c in &r.own_copies {
+            println!("  own copy: {} ({}), from the player's PC, never downloaded", c.label, c.game);
         }
         if !packs {
             continue;

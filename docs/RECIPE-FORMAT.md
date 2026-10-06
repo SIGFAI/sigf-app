@@ -11,7 +11,9 @@ and serves it, and the app in this repository installs it.
 ## 1. Principles
 
 1. **The player's copy is the base.** We never ship game files. A mashup that needs a game the player does not own
-   shows what is missing and where to get it.
+   shows what is missing and where to get it. A mashup that needs a file only the player may have (a ROM they dumped, a
+   library built from decompiled code) gets it on the player's PC (`own_copies`, `player_build`, section 4): nothing
+   unshareable is ever shipped by SIGF.
 2. **Isolated by default.** A mod installs into an app-managed profile (a Minecraft instance, a `-file` argument, a
    BepInEx doorstop profile), not into the game folder. When a mod must go into the game folder, the app takes a
    snapshot of every file it touches first. "Restore vanilla" is always one click.
@@ -227,6 +229,74 @@ Then, besides the SIGFAI repo's own assets, a download may be a file of exactly 
 downloads the author's file on the player's demand; SIGFAI hosts only the recipe and its own files. Upstream files are
 never repacked in this mode: they install as released, with `contents` listing every zip entry.
 
+### Bring your own copy and player builds (BYO-ROM)
+
+Some mashups run on data only the player may have: a cartridge ROM they dumped (Super Mario 64 for libsm64), or a file
+built from a game's decompiled code. SIGF ships none of it. Two optional recipe fields move that work to the
+player's PC; the SIGF catalog and the app (`src-tauri/src/install/check.rs`) hold them to the same rule, and the card lists them (`ownCopies`, `playerBuild`) so the app says so before Get.
+
+```json
+"own_copies": [ {
+  "game": "sm64", "label": "Super Mario 64 (USA)", "names": ["super mario 64", "mario 64", "sm64"],
+  "rom": { "as": "baserom.us.z64", "sha1": ["9bef1128717f958171a4afac3ed78ee2bb4e86ce"], "extensions": [".z64", ".v64", ".n64"],
+           "size": 8388608, "format": "n64" },
+  "step": "minecraft", "to": "{instance}/.minecraft/config/mario64" } ],
+"player_build": [ {
+  "id": "sm64-dll", "label": "Mario's library (sm64.dll)", "step": "minecraft", "minutes": 5,
+  "toolchain": ["w64devkit-2.10.0", "python-3.12.10"],
+  "script": { "name": "build-sm64-dll.sh", "url": "https://github.com/SIGFAI/<repo>/releases/download/v<version>/build-sm64-dll.sh", "sha256": "...", "size": 2400 },
+  "inputs": [
+    { "name": "libsm64", "url": "https://github.com/libsm64/libsm64/archive/<40 hex>.zip", "sha256": "...", "size": 616378, "unpack": true, "root": "libsm64-<40 hex>" },
+    { "name": "geo.inc.c", "url": "https://raw.githubusercontent.com/n64decomp/sm64/<40 hex>/actors/mario/geo.inc.c", "sha256": "...", "size": 82801 } ],
+  "outputs": [ { "name": "sm64.dll", "to": "{instance}/.minecraft/config/mario64" } ] } ]
+```
+
+- `own_copies` (1 to 3): a file of a game the player owns. `game` is one of `games[]` (the guest, which the card then
+  does not list as a store game to own: `needs` stays the installed games). `label` is what the player is asked for.
+  `rom.as` the plain file name it is saved as; `rom.sha1` 1 to 16 accepted SHA-1s (lowercase hex); `rom.extensions` 1
+  to 8 (`.z64`); `rom.size` the exact size in bytes (optional); `rom.format: "n64"` (needs `size`, a multiple of 4, at
+  most 256 MiB): a byte-swapped `.v64` or little-endian `.n64` dump is normalized to big-endian `.z64` (told apart by
+  the header word `80 37 12 40`) before it is hashed and written. `names` (up to 8) are search hints. `step` is an
+  install step's game; `to` is `{instance}/...` (that step's Prism instance folder, `mrpack` steps only) or `{app}/...`
+  (its own SIGF folder), plain segments after it: never `{game}`, `{docs}` or `{fivem}`.
+  - Finding it (`src-tauri/src/install/byo.rs`): when the player clicks Get, the core looks in Downloads, Desktop and Documents
+    (OneDrive ones too), `%USERPROFILE%\ROMs`, `C:\ROMs` and similar, 4 levels deep, never into `AppData`, system or
+    hidden folders, no symlinks, 15 s at most: files with one of the extensions (and the size), loose or inside a
+    `.zip` (up to 1 GiB, entries up to 256 MiB), names matching `names` first. The first one whose SHA-1 matches is used.
+    Else the app shows "Uses your own copy of <label>. SIGF never ships or downloads it." and the player picks the file in
+    a native dialog the core opens (the webview never names a path). A wrong dump is a clear error (`ownCopyMismatch`:
+    "This file is not the <label> dump this mashup needs (SHA-1 ...)"), with the candidates that did not match named.
+  - The engine checks every copy before the first download (`ownCopyMissing` / `ownCopyMismatch`), then, once the steps
+    are installed, copies it (checked again while copied) to `<to>/<rom.as>` and records it in `installed.json`
+    (`placed`). Restore deletes it with the folder it is in. The copy never enters the download cache and is never sent
+    anywhere: no code path opens a network connection for it.
+- `player_build` (1 or 2): files SIGF must not distribute, built once on the player's PC. There is no command in the
+  recipe: `script` is a `.sh` release asset of the mashup's own SIGFAI repo (at most 1 MiB); `inputs` (up to 16, each at
+  most 512 MiB) are commit-pinned GitHub sources only, the archive of a commit
+  (`https://github.com/<owner>/<repo>/archive/<40 hex>.zip`, redirected to `codeload.github.com`) or one file of it
+  (`https://raw.githubusercontent.com/<owner>/<repo>/<40 hex>/<path>`), or release assets of the mashup's own repo;
+  every file has its `sha256` and `size`. `unpack: true` extracts a zip input into `$SIGF_IN/<name>/`, `root` keeps only
+  that folder of it (GitHub archives wrap everything in `<repo>-<commit>/`). `toolchain` names ids of the app's own
+  pinned table (`src-tauri/src/install/tools.rs` `TOOLS`), at least one with a shell:
+
+  | Id | Download (sha256 pinned in the app) | Unpacked to |
+  |---|---|---|
+  | `w64devkit-2.10.0` | `https://github.com/skeeto/w64devkit/releases/download/v2.10.0/w64devkit-x64-2.10.0.7z.exe` (67,127,496 B, GitHub digest `18d0a4c7...`), a self-extracting 7-Zip archive run with `-y -o<dir>` | `<SIGF_HOME>/tools/w64devkit-2.10.0/` (MinGW-w64 GCC, make, BusyBox `sh`, `patch`, `unzip`) |
+  | `python-3.12.10` | `https://www.python.org/ftp/python/3.12.10/python-3.12.10-embed-amd64.zip` (11,133,606 B, MD5 matches python.org's) | `<SIGF_HOME>/tools/python-3.12.10/` |
+
+  `outputs` (1 to 8): plain file names the script leaves in `$SIGF_OUT`, each copied to `to` (same rule as an own copy's)
+  and recorded in `placed`. `minutes` (1 to 60) is shown on the card; the run is stopped after 4x that (10 to 60 min).
+  - Running it (`src-tauri/src/install/build.rs`): before anything is installed, the engine fetches the toolchain (once, kept in
+    `<SIGF_HOME>/tools/`), the script and the inputs (into `<SIGF_HOME>/build/<slug>/`, never the shared cache), all
+    through `FetchOpts::for_build`: build downloads may also start on `raw.githubusercontent.com` and `www.python.org`
+    and follow redirects to `codeload.github.com`; mod downloads never can. Then it runs `sh <script>` hidden, with a
+    clean environment: `SIGF_IN`, `SIGF_OUT`, `SIGF_WORK` (the working directory), `PATH` (the toolchain, then Windows'
+    own folders), `HOME`, `TEMP`, and the Windows basics (`SystemRoot`, `OS`, ...). The build needs no network: the
+    script only uses what the app fetched. A failed or missing output stops the install before anything is written
+    (`buildFailed`, the log kept as `<SIGF_HOME>/logs/<slug>-<id>-build.log`). The build folder is deleted afterwards,
+    sources included.
+- Example: `library/mario64-in-minecraft/` (Zckyy's Fabric mod, libsm64 built on the player's PC, the player's SM64 ROM).
+
 **Download rule in the app** (`src-tauri/src/install/check.rs`): the app enforces the catalog's rule itself, so it
 does not depend on sigf.ai or its own UI serving honest recipes. Before the first byte of an install, every recipe
 download (install files, `requires[].source`, the mrpack `pack`) must be
@@ -241,7 +311,9 @@ segments, `%2e`/`%2f`/`%5c`, a user, port, query or fragment are refused. `file:
 `install` and `join_lobby` commands re-run the whole rule (`check_recipe`: id, version, games, steps, destinations,
 launch, sizes) on the recipe text, and accept a `{game}` folder only when the core's own scan found it.
 `cargo run --example install -- validate [--packs] <mashup.json>...` runs the same rule on recipe files (with
-`--packs`, on each mrpack's index too).
+`--packs`, on each mrpack's index too). Player builds (section above) add their own downloads: the pinned toolchain
+URLs of `install/tools.rs`, the script from the mashup's own releases, inputs that are commit-pinned GitHub sources;
+`own_copies` add none.
 
 `source.license` is the license of what is shipped, not only of the upstream code: a script-extender plugin statically
 linked with a GPL-3.0 library is a GPL work, so the SIGFAI repo carries the Corresponding Source (a mirror of the

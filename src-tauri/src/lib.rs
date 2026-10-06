@@ -30,6 +30,20 @@ static HOSTED_LOCK: Mutex<()> = Mutex::new(());
 /// every `link://open` event, so a link that arrives before the webview listens is never lost.
 static PENDING_LINKS: Mutex<Vec<String>> = Mutex::new(Vec::new());
 
+/// The player's own copies found or picked for a recipe (`own_copies`), by (recipe id, game): only the core ever holds
+/// a path to them. Each is checked again by the engine before it is used, and never leaves the PC.
+static OWN_PICKS: Mutex<Vec<(String, String, install::byo::OwnSource)>> = Mutex::new(Vec::new());
+
+fn own_picks(recipe_id: &str) -> HashMap<String, install::byo::OwnSource> {
+    OWN_PICKS.lock().unwrap_or_else(|p| p.into_inner()).iter().filter(|(r, _, _)| r == recipe_id).map(|(_, g, s)| (g.clone(), s.clone())).collect()
+}
+
+fn remember_pick(recipe_id: &str, game: &str, src: install::byo::OwnSource) {
+    let mut picks = OWN_PICKS.lock().unwrap_or_else(|p| p.into_inner());
+    picks.retain(|(r, g, _)| !(r == recipe_id && g == game));
+    picks.push((recipe_id.to_string(), game.to_string(), src));
+}
+
 /// Install folders found by the last scan: the only folders an install or join may treat as `{game}`.
 static SCANNED_DIRS: Mutex<Vec<std::path::PathBuf>> = Mutex::new(Vec::new());
 
@@ -117,12 +131,96 @@ async fn install(
         // The webview is not trusted: the recipe is held to the catalog's whole rule, the folders to the scan.
         let recipe = install::check::check_recipe(&recipe_json, dev_local())?;
         check_game_dirs(&game_dirs)?;
-        let engine = engine(detect_prism());
+        let mut engine = engine(detect_prism());
+        engine.own = own_picks(&recipe.id);
         engine.install(&recipe, &game_dirs, &mut |p| {
             let _ = app.emit("install://progress", &p);
         })
     })
     .await
+}
+
+/// Bring your own copy, step 1: for each `own_copies` entry of the recipe, the copy already picked (still valid), else a
+/// search of the usual folders on this PC (`byo::search`). Nothing is sent anywhere. Found copies are kept for `install`.
+#[tauri::command]
+async fn own_copies_find(recipe_json: String) -> Result<Vec<install::byo::Found>, install::CommandError> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let recipe = install::check::check_recipe(&recipe_json, dev_local())?;
+        let known = own_picks(&recipe.id);
+        let roots = install::byo::default_roots();
+        let mut out = vec![];
+        for c in &recipe.own_copies {
+            if let Some(src) = known.get(&c.game).filter(|s| install::byo::verify(c, s).is_ok()) {
+                out.push(install::byo::Found { game: c.game.clone(), label: c.label.clone(), found: Some(src.clone()), rejected: vec![] });
+                continue;
+            }
+            let f = install::byo::search(c, &roots, install::byo::SearchLimits::default());
+            if let Some(src) = &f.found {
+                remember_pick(&recipe.id, &c.game, src.clone());
+            }
+            out.push(f);
+        }
+        Ok::<_, install::InstallError>(out)
+    })
+    .await
+    .map_err(|e| install::InstallError::Io { path: String::new(), message: e.to_string() })?
+    .map_err(Into::into)
+}
+
+/// Bring your own copy, step 2: the player picks the file in a native dialog opened by the core (the webview never
+/// names a path). A `.zip` is searched for a matching entry. The pick is checked by SHA-1: a wrong dump is an
+/// `ownCopyMismatch` error; `found: null` means the player closed the dialog.
+#[tauri::command]
+async fn own_copy_pick(window: tauri::WebviewWindow, recipe_json: String, game: String) -> Result<install::byo::Found, install::CommandError> {
+    let recipe = install::check::check_recipe(&recipe_json, dev_local())?;
+    let c = recipe.own_copies.iter().find(|c| c.game == game).cloned().ok_or_else(|| install::InstallError::recipe(format!("no own copy for {game}")))?;
+    let picked = pick_file(&window, &c).await;
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut out = install::byo::Found { game: c.game.clone(), label: c.label.clone(), found: None, rejected: vec![] };
+        let Some(path) = picked else { return Ok::<_, install::InstallError>(out) };
+        let is_zip = path.extension().is_some_and(|e| e.eq_ignore_ascii_case("zip"));
+        let src = if is_zip {
+            // Search the archive the same way the folder search does.
+            let f = install::byo::search_zip(&c, &path);
+            match f {
+                Some(s) => s,
+                None => {
+                    return Err(install::InstallError::OwnCopyMismatch {
+                        game: c.game.clone(),
+                        label: c.label.clone(),
+                        file: path.to_string_lossy().into_owned(),
+                        sha1: "no matching file inside".into(),
+                    })
+                }
+            }
+        } else {
+            install::byo::OwnSource::file(path)
+        };
+        install::byo::verify(&c, &src)?;
+        remember_pick(&recipe.id, &c.game, src.clone());
+        out.found = Some(src);
+        Ok::<_, install::InstallError>(out)
+    })
+    .await
+    .map_err(|e| install::InstallError::Io { path: String::new(), message: e.to_string() })?
+    .map_err(Into::into)
+}
+
+/// The native open-file dialog for one own copy, filtered on its extensions (and `.zip`), over the app's window.
+#[cfg(windows)]
+async fn pick_file(window: &tauri::WebviewWindow, c: &install::recipe::OwnCopy) -> Option<std::path::PathBuf> {
+    let exts: Vec<String> = c.rom.extensions.iter().map(|e| e.trim_start_matches('.').to_string()).chain(["zip".to_string()]).collect();
+    let mut d = rfd::AsyncFileDialog::new().set_title(format!("Pick your own copy of {}", c.label)).add_filter(&c.label, &exts);
+    if let Some(dl) = std::env::var_os("USERPROFILE").map(|h| std::path::PathBuf::from(h).join("Downloads")).filter(|d| d.is_dir()) {
+        d = d.set_directory(dl);
+    }
+    d = d.set_parent(window);
+    d.pick_file().await.map(|f| f.path().to_path_buf())
+}
+
+#[cfg(not(windows))]
+async fn pick_file(_window: &tauri::WebviewWindow, _c: &install::recipe::OwnCopy) -> Option<std::path::PathBuf> {
+    None
 }
 
 #[tauri::command]
@@ -493,7 +591,18 @@ async fn join_lobby(
         let a = app.clone();
         blocking(move || {
             check_game_dirs(&game_dirs)?;
-            engine(detect_prism()).install(&recipe, &game_dirs, &mut |p| {
+            // A mashup on the player's own copy: look for it on this PC if it was not picked yet (nothing is sent).
+            for c in &recipe.own_copies {
+                if !own_picks(&recipe.id).contains_key(&c.game) {
+                    let roots = install::byo::default_roots();
+                    if let Some(src) = install::byo::search(c, &roots, install::byo::SearchLimits::default()).found {
+                        remember_pick(&recipe.id, &c.game, src);
+                    }
+                }
+            }
+            let mut engine = engine(detect_prism());
+            engine.own = own_picks(&recipe.id);
+            engine.install(&recipe, &game_dirs, &mut |p| {
                 let _ = a.emit("install://progress", &p);
             })
         })
@@ -547,7 +656,7 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            scan_games, steam_lookup, launch, install, restore, installed, fetch_text, play, join_lobby, lobby_api, lan_address,
+            scan_games, steam_lookup, launch, install, own_copies_find, own_copy_pick, restore, installed, fetch_text, play, join_lobby, lobby_api, lan_address,
             take_links, minecraft_players, hosted_list, hosted_save, hosted_forget, privacy_get, privacy_set,
             update::update_check, update::update_blocked, update::update_install
         ])

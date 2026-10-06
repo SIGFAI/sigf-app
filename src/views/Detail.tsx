@@ -2,7 +2,7 @@ import type { Ctx } from '../App';
 import type { Mashup } from '../data/catalog';
 import { GAME } from '../data/games';
 import { openUrl } from '../lib/api';
-import { Avatar, GameArt, Icon, MashupCover, fmtCount } from '../ui';
+import { Avatar, GameArt, Icon, MashupCover, fmtCount, shownDownloads } from '../ui';
 import { ActionButton, gameName } from './shared';
 import { PlayTogether } from './Lobbies';
 
@@ -18,6 +18,8 @@ export function Detail({ ctx, m, onClose }: { ctx: Ctx; m: Mashup; onClose: () =
   const repo = m.links?.repo ?? m.repo ?? null;
   const howTo = m.howToPlay ?? [];
   const notes = m.notes ?? [];
+  const own = m.ownCopies ?? [];
+  const builds = m.playerBuild ?? [];
   // A community mashup (credited author, not SIGF or a launchpad agent): reviewed by SIGF before it is listed.
   const community = !m.by.agent && m.by.name !== 'SIGF';
 
@@ -88,6 +90,7 @@ export function Detail({ ctx, m, onClose }: { ctx: Ctx; m: Mashup; onClose: () =
             {sides.map((id) => {
               const known = !!GAME[id];
               const required = m.needs.includes(id);
+              const copy = own.find((c) => c.game === id);
               const have = ctx.owned.has(id);
               const g = ctx.scan?.games.find((x) => x.canon === id);
               return (
@@ -95,7 +98,9 @@ export function Detail({ ctx, m, onClose }: { ctx: Ctx; m: Mashup; onClose: () =
                   <GameArt id={known ? id : null} name={GAME[id]?.name ?? id} src={g?.art} wide={g?.artWide} local={g?.artLocal} wideLocal={g?.wideLocal} />
                   <div>
                     <b>{GAME[id]?.name ?? id}</b>
-                    {required ? (
+                    {copy ? (
+                      <span>Your own copy of {copy.label}: found on your PC or picked when you click Get. SIGF never ships or downloads it.</span>
+                    ) : required ? (
                       have ? (
                         <span><Icon name="check" size={13} /> On this PC{g?.build ? ` · build ${g.build}` : ''}</span>
                       ) : (
@@ -113,6 +118,17 @@ export function Detail({ ctx, m, onClose }: { ctx: Ctx; m: Mashup; onClose: () =
             })}
           </div>
 
+          {(own.length > 0 || builds.length > 0) && (
+            <div className="trust">
+              <Icon name="shield" size={16} />
+              <span>
+                {own.map((c) => `Uses your own copy of ${c.label}. SIGF never ships or downloads it: the app checks your file on your PC and copies it into this mashup's folder. `).join('')}
+                {builds.map((b) => `The first install builds ${b.label} on your PC${b.minutes ? ` (about ${b.minutes} min)` : ''}, from pinned sources with a compiler SIGF downloads once from its official release. `).join('')}
+                Restore vanilla deletes these files.
+              </span>
+            </div>
+          )}
+
           {m.steps.length > 0 && (
             <>
               <h4>What the install does</h4>
@@ -126,7 +142,7 @@ export function Detail({ ctx, m, onClose }: { ctx: Ctx; m: Mashup; onClose: () =
             {m.strategy && <div><small>Method</small>{m.strategy}</div>}
             {m.sizeMb > 0 && <div><small>Size</small>{m.sizeMb} MB</div>}
             <div><small>Made by</small><span className="by-line"><Avatar src={m.avatar} size={20} />{m.links?.author ? <a onClick={() => openUrl(m.links!.author!)}>{m.by.name} <Icon name="ext" size={11} /></a> : m.by.name}{m.by.model ? ` · ${m.by.model}` : ''}</span></div>
-            {m.plays > 0 && <div><small>Plays</small>{fmtCount(m.plays)}{m.rating > 0 && ` · ★ ${m.rating.toFixed(1)}`}</div>}
+            {shownDownloads(m.downloads) && <div title="Downloads of this mashup's files from its SIGF GitHub releases"><small>Downloads</small>{fmtCount(m.downloads)}</div>}
             {m.license && <div><small>License</small>{m.license}</div>}
             {m.updated && <div><small>Updated</small>{m.updated.slice(0, 10)}</div>}
             {m.repo && <div><small>Source</small><a onClick={() => openUrl(m.repo!)}>GitHub <Icon name="ext" size={11} /></a></div>}

@@ -15,6 +15,10 @@ pub struct InstalledMod {
     /// Unix seconds.
     pub installed_at: u64,
     pub games: Vec<InstalledGame>,
+    /// Files placed besides the downloads: the player's own copies and the files built on this PC (absolute paths).
+    /// Restore deletes them.
+    #[serde(default)]
+    pub placed: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

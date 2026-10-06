@@ -1,5 +1,5 @@
 // Sample data for `npm run dev` in a plain browser (no Rust core, no sigf.ai), so the screens can be designed offline.
-// Every entry, name, author, count and rating below is invented. The app itself reads the live catalog
+// Every entry, name and author below is invented; seed entries carry no download count. The app itself reads the live catalog
 // (`/api/app/catalog`, docs/RECIPE-FORMAT.md section 5).
 
 export type Kind = 'mod' | 'mashup' | 'passthrough';
@@ -23,8 +23,8 @@ export type Mashup = {
   installSeconds: number;
   strategy: string;
   steps: string[];
-  plays: number;
-  rating: number;
+  /** Downloads from the mashup's SIGFAI GitHub releases (live catalog only, absent when unknown). Never invented. */
+  downloads?: number;
   updated: string;
   repo?: string;
   fresh?: boolean;
@@ -46,6 +46,10 @@ export type Mashup = {
   notes?: string[];
   /** How to play in game: goal, controls, where to go (the recipe's how_to_play, plain text, live catalog only). */
   howToPlay?: string[];
+  /** Bring your own copy: game files the player supplies from their own PC (a ROM), never shipped by SIGF. */
+  ownCopies?: { game: string; label: string }[];
+  /** Built once on the player's PC on first install (live catalog only). */
+  playerBuild?: { label: string; minutes: number | null }[];
 };
 
 export const CATALOG: Mashup[] = [
@@ -63,8 +67,6 @@ export const CATALOG: Mashup[] = [
     installSeconds: 70,
     strategy: 'game-dir-snapshot + mrpack',
     steps: ['Plugin for the host game', 'Fabric instance in Prism', 'Snapshot of the host files for Restore'],
-    plays: 1200,
-    rating: 4.5,
     updated: '2026-01-03',
     fresh: true,
   },
@@ -82,8 +84,6 @@ export const CATALOG: Mashup[] = [
     installSeconds: 95,
     strategy: 'game-dir-snapshot + mrpack',
     steps: ['Script extender for your game build', 'Plugin into Data', 'Fabric instance in Prism'],
-    plays: 900,
-    rating: 4.4,
     updated: '2026-01-02',
   },
   {
@@ -100,8 +100,6 @@ export const CATALOG: Mashup[] = [
     installSeconds: 4,
     strategy: 'args (-file mod.pk3)',
     steps: ['mod.pk3 into the app library', 'Launch argument only: nothing touches the game'],
-    plays: 600,
-    rating: 4.3,
     updated: '2026-01-02',
   },
   {
@@ -117,8 +115,6 @@ export const CATALOG: Mashup[] = [
     installSeconds: 6,
     strategy: 'profile (custom folder)',
     steps: ['Scripts into tf/custom', 'Local listen server, bots only'],
-    plays: 300,
-    rating: 4.2,
     updated: '2026-01-01',
   },
   {
@@ -134,8 +130,6 @@ export const CATALOG: Mashup[] = [
     installSeconds: 20,
     strategy: 'mrpack',
     steps: ['Fabric instance in Prism'],
-    plays: 150,
-    rating: 4.1,
     updated: '2026-01-01',
   },
 ];

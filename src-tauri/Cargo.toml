@@ -1,6 +1,6 @@
 [package]
 name = "sigf-app"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 description = "SIGF: install game mashups in one click, and put every game back with Restore vanilla"
 license = "AGPL-3.0-only"
@@ -36,6 +36,8 @@ tauri-plugin-updater = "2"
 winreg = "0.55"
 # The process list for the updater's "Close your game first" (src/update.rs).
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Diagnostics_ToolHelp", "Win32_System_Threading"] }
+# The native "pick your own copy" file dialog, opened by the core (the webview never names a path; src/install/byo.rs).
+rfd = { version = "0.17", default-features = false }
 [profile.release]
 lto = true
 codegen-units = 1

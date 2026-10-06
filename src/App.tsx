@@ -2,15 +2,17 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { CATALOG, type Mashup } from './data/catalog';
 import { GAME } from './data/games';
 import { fetchAgents, getText, inTauri, launchGame, openUrl, playInstalled, scanGames, windowAction, type Agent, type Scan } from './lib/api';
-import { installMashup, installedMods, isInstallError, onInstallProgress, restoreMashup } from './lib/install';
+import { findOwnCopies, installMashup, installedMods, isInstallError, onInstallProgress, restoreMashup, type OwnFound } from './lib/install';
 import { Icon, STORE_LABEL } from './ui';
 import { Home } from './views/Home';
 import { Library } from './views/Library';
 import { Build } from './views/Build';
+import { Live } from './views/Live';
 import { Queue } from './views/Queue';
 import { Detail } from './views/Detail';
 import { Picker } from './views/Picker';
 import { JoinSheet, Lobbies, type Joining } from './views/Lobbies';
+import { OwnCopySheet, type OwnAsk } from './views/OwnCopy';
 import { PrivacyPanel } from './views/Privacy';
 import { UpdateBanner } from './views/Update';
 import { UPDATE_EVERY_MS, checkUpdate, type Available } from './lib/update';
@@ -25,8 +27,8 @@ const HEARTBEAT_MS = 30_000;
 const SERVER_POLL_MS = 10_000;
 const SERVER_WARN_MS = 15 * 60_000;   // a gentle warning when the 8 h session has this much left
 
-export type View = 'mix' | 'library' | 'together' | 'build' | 'queue';
-export type Phase = 'download' | 'verify' | 'install' | 'ready';
+export type View = 'mix' | 'library' | 'live' | 'together' | 'build' | 'queue';
+export type Phase = 'download' | 'verify' | 'build' | 'install' | 'ready';
 /** `version`: the installed version, once the engine has it (lobbies pin one). */
 export type Install = { phase: Phase; pct: number; started: number; real?: boolean; version?: string };
 /** `region`: start a free hosted server there (the mashup's recipe has a `server` block); else the host's own game serves. */
@@ -75,6 +77,7 @@ export type Ctx = {
 const NAV: { id: View; label: string; icon: string }[] = [
   { id: 'mix', label: 'Mix', icon: 'mix' },
   { id: 'library', label: 'Library', icon: 'library' },
+  { id: 'live', label: 'Live', icon: 'tv' },
   { id: 'together', label: 'Lobbies', icon: 'people' },
   { id: 'build', label: 'Build', icon: 'build' },
   { id: 'queue', label: 'Installs', icon: 'queue' },
@@ -102,6 +105,7 @@ export default function App() {
   const [toast, setToast] = useState<string | null>(null);
   const [hosted, setHosted] = useState<Hosted | null>(null);
   const [joining, setJoining] = useState<Joining | null>(null);
+  const [ownAsk, setOwnAsk] = useState<OwnAsk | null>(null);
   const [hosting, setHosting] = useState<Hosting | null>(null);
   const [server, setServer] = useState<HostedServer | null>(null);
   const [serverError, setServerError] = useState<string | null>(null);
@@ -288,6 +292,15 @@ export default function App() {
     return () => clearInterval(t);
   }, [installs]);
 
+  /** An install error, said for the player. */
+  const installFailed = (e: unknown) => {
+    if (!isInstallError(e)) return String(e);
+    if (e.kind === 'needsLauncher') return 'Minecraft mashups need Prism Launcher: install it, then click Get again';
+    if (e.kind === 'ownCopyMissing') return `Uses your own copy of ${e.label}. SIGF never ships or downloads it: click Get and pick your file.`;
+    if (e.kind === 'ownCopyMismatch') return `That file is not a ${e.label} dump this mashup can use. Pick a clean, unmodified dump.`;
+    if (e.kind === 'buildFailed') return `Building ${e.label} on your PC failed: ${e.message}${e.log ? ` (log: ${e.log})` : ''}`;
+    return e.message;
+  };
   const flash = (s: string) => {
     setToast(s);
     setTimeout(() => setToast((t) => (t === s ? null : t)), 3200);
@@ -341,7 +354,7 @@ export default function App() {
       .then((t) => {
         const live = JSON.parse(t) as Partial<Mashup>[] as Mashup[];
         const ids = new Set(live.map((m) => m.id));
-        setCatalog([...live.map((m) => ({ ...m, plays: m.plays ?? 0, rating: m.rating ?? 0, steps: m.steps ?? [], strategy: m.strategy ?? "", installSeconds: m.installSeconds ?? 30, sizeMb: m.sizeMb ?? 0, needs: m.needs ?? [m.host] })), ...(inTauri ? [] : CATALOG.filter((m) => !ids.has(m.id)))]);
+        setCatalog([...live.map((m) => ({ ...m, steps: m.steps ?? [], strategy: m.strategy ?? "", installSeconds: m.installSeconds ?? 30, sizeMb: m.sizeMb ?? 0, needs: m.needs ?? [m.host] })), ...(inTauri ? [] : CATALOG.filter((m) => !ids.has(m.id)))]);
         catalogAt.current = Date.now();
       })
       .catch(() => {});
@@ -411,6 +424,23 @@ export default function App() {
     await confirmJoin(id, lobby);
   };
 
+  /**
+   * Bring your own copy: true when every copy the recipe needs is on this PC (found by the core) or the player picked
+   * it in the sheet; false when they cancel. A recipe without own copies is ready at once.
+   */
+  const ownCopiesReady = async (m: Mashup, text: string): Promise<boolean> => {
+    let needs: unknown;
+    try {
+      needs = (JSON.parse(text) as { own_copies?: unknown }).own_copies;
+    } catch {
+      return true; // the core refuses a broken recipe with its own error
+    }
+    if (!Array.isArray(needs) || needs.length === 0) return true;
+    const missing: OwnFound[] = (await findOwnCopies(text)).filter((f) => !f.found);
+    if (!missing.length) return true;
+    return new Promise<boolean>((resolve) => setOwnAsk({ m, recipe: text, missing, resolve }));
+  };
+
   /** The player said yes: the core installs the pinned version if needed, then launches with the address they saw. */
   const confirmJoin = async (id: string, lobby: Lobby) => {
     const fail = (error: string, prism = false) => setJoining((j) => ({ ...(j ?? { id }), id, step: 'error', error, prism }));
@@ -450,12 +480,20 @@ export default function App() {
         return;
       }
       if (!m.recipeUrl) return flash(`${m.name} is not in the live catalog yet`);
+      // The catalog serves recipeUrl relative to the site (/api/app/recipe/<id>@<version>).
+      let text: string;
+      try {
+        text = await getText(new URL(m.recipeUrl, SITE).href);
+        // A mashup on the player's own copy (a ROM): found on this PC or picked, before anything is downloaded.
+        if (!(await ownCopiesReady(m, text))) return;
+      } catch (e) {
+        return flash(installFailed(e));
+      }
       setInstalls((a) => ({ ...a, [m.id]: { phase: 'download', pct: 0, started: Date.now(), real: true } }));
       try {
         const dirs: Record<string, string> = {};
         for (const g of scan?.games ?? []) if (g.canon && g.installDir && !dirs[g.canon]) dirs[g.canon] = g.installDir;
-        // The catalog serves recipeUrl relative to the site (/api/app/recipe/<id>@<version>).
-        const done = await installMashup(await getText(new URL(m.recipeUrl, SITE).href), dirs);
+        const done = await installMashup(text, dirs);
         setInstalls((a) => ({ ...a, [m.id]: { phase: 'ready', pct: 100, started: Date.now(), real: true, version: done?.version ?? m.version } }));
         flash(`${m.name} is ready to play`);
       } catch (e) {
@@ -464,7 +502,7 @@ export default function App() {
           delete n[m.id];
           return n;
         });
-        flash(isInstallError(e) && e.kind === 'needsLauncher' ? 'Minecraft mashups need Prism Launcher: install it, then click Get again' : isInstallError(e) ? e.message : String(e));
+        flash(installFailed(e));
         if (isInstallError(e) && e.kind === 'needsLauncher') void openUrl('https://prismlauncher.org/download/windows/');
       }
     },
@@ -513,7 +551,7 @@ export default function App() {
       const m: Mashup = {
         id: r.id, name: r.name, tagline: r.tagline ?? 'Installed from a local recipe', kind: r.kind ?? 'mod', host, guest,
         needs: (r.games ?? []).map((g) => g.game), by: { name: 'Local file' }, license: '', sizeMb: 0, installSeconds: 0,
-        strategy: 'local recipe', steps: [], plays: 0, rating: 0, updated: '', recipeUrl: 'local',
+        strategy: 'local recipe', steps: [], updated: '', recipeUrl: 'local',
       };
       setCatalog((c) => [m, ...c.filter((x) => x.id !== m.id)]);
       setInstalls((a) => ({ ...a, [m.id]: { phase: 'download', pct: 0, started: Date.now(), real: true } }));
@@ -670,6 +708,7 @@ export default function App() {
       <main className="main" key={view}>
         {view === 'mix' && <Home ctx={ctx} query={query} />}
         {view === 'library' && <Library ctx={ctx} />}
+        {view === 'live' && <Live />}
         {view === 'together' && <Lobbies ctx={ctx} />}
         {view === 'build' && <Build ctx={ctx} />}
         {view === 'queue' && <Queue ctx={ctx} />}
@@ -690,6 +729,7 @@ export default function App() {
           onClose={() => setPicking(null)}
         />
       )}
+      {ownAsk && <OwnCopySheet ask={ownAsk} onDone={(ok) => { setOwnAsk(null); ownAsk.resolve(ok); }} />}
       {joining && <JoinSheet ctx={ctx} j={joining} onClose={() => setJoining(null)} onConfirm={(l) => void confirmJoin(joining.id, l)} />}
       {privacy && !privacy.asked && <PrivacyPanel first initial={privacy} onDone={() => {}} />}
       {privacy?.asked && privacyOpen && <PrivacyPanel initial={privacy} onDone={() => { setPrivacyOpen(false); flash('Privacy choices saved'); }} onClose={() => setPrivacyOpen(false)} />}

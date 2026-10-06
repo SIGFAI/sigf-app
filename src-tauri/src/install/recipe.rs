@@ -33,6 +33,91 @@ pub struct Recipe {
     pub media: Option<Media>,
     #[serde(default)]
     pub built_by: Option<BuiltBy>,
+    /// Bring your own copy: game files the player already has (a ROM they dumped), found or picked on their PC,
+    /// checked by SHA-1 and copied into the mashup's own folder. Never shipped, downloaded or uploaded by SIGF.
+    #[serde(default)]
+    pub own_copies: Vec<OwnCopy>,
+    /// Files SIGF must not distribute, built once on the player's PC by a pinned script with a pinned toolchain.
+    #[serde(default)]
+    pub player_build: Vec<PlayerBuild>,
+}
+
+/// `own_copies[]`: one file of a game the player owns (docs/RECIPE-FORMAT.md section 4, "Bring your own copy").
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OwnCopy {
+    /// The `games[]` entry this copy comes from (`sm64`).
+    pub game: String,
+    /// What the player is asked for: "Super Mario 64 (USA)".
+    #[serde(default)]
+    pub label: String,
+    pub rom: OwnRom,
+    /// Lowercase hints for the search (`mario 64`): matching file names are checked first.
+    #[serde(default)]
+    pub names: Vec<String>,
+    /// The install step (game id) whose folder receives the copy.
+    pub step: String,
+    /// The folder the copy goes to: `{instance}/...` (that step's Prism instance) or `{app}/...`.
+    pub to: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OwnRom {
+    /// The file name it is saved as in `to` (`baserom.us.z64`).
+    #[serde(rename = "as")]
+    pub save_as: String,
+    /// Accepted SHA-1s of the file (after `format` normalization), lowercase hex.
+    pub sha1: Vec<String>,
+    /// File extensions searched for (`.z64`), also inside `.zip` archives.
+    pub extensions: Vec<String>,
+    /// Exact size in bytes, when every accepted dump has the same size: speeds up the search.
+    #[serde(default)]
+    pub size: Option<u64>,
+    /// `n64`: byte-swapped (`.v64`) and little-endian (`.n64`) dumps are normalized to big-endian `.z64` first.
+    #[serde(default)]
+    pub format: Option<String>,
+}
+
+/// `player_build[]`: files built once on the player's PC (docs/RECIPE-FORMAT.md section 4, "Player build").
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PlayerBuild {
+    pub id: String,
+    #[serde(default)]
+    pub label: String,
+    /// The install step (game id) whose folder receives the outputs.
+    pub step: String,
+    /// Ids of the app's own pinned toolchain table (`install::tools::TOOLS`), nothing else.
+    pub toolchain: Vec<String>,
+    /// The build script, a release asset of the mashup's own SIGFAI repo, run with the toolchain's `sh`.
+    pub script: BuildFile,
+    /// Pinned sources the script uses, fetched by the app (commit-pinned GitHub archives or raw files).
+    #[serde(default)]
+    pub inputs: Vec<BuildFile>,
+    /// Files the script leaves in `$SIGF_OUT`, and where each goes.
+    pub outputs: Vec<BuildOutput>,
+    /// About how long the build takes, for the UI.
+    #[serde(default)]
+    pub minutes: Option<u32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BuildFile {
+    pub name: String,
+    pub url: String,
+    pub sha256: String,
+    #[serde(default)]
+    pub size: Option<u64>,
+    /// Inputs only: a zip extracted into `$SIGF_IN/<name>/`.
+    #[serde(default)]
+    pub unpack: bool,
+    /// With `unpack`: only this folder of the zip, its prefix stripped (GitHub archives wrap everything in one).
+    #[serde(default)]
+    pub root: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BuildOutput {
+    pub name: String,
+    pub to: String,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]

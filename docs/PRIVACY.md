@@ -1,6 +1,6 @@
 # SIGF desktop app: privacy policy
 
-Last updated: 2026-10-05. This file is the source of truth for the sigf.ai privacy page (`https://sigf.ai/privacy`), the
+Last updated: 2026-10-06. This file is the source of truth for the sigf.ai privacy page (`https://sigf.ai/privacy`), the
 installer's privacy text (`src-tauri/windows/privacy.txt`, quoted at the end and checked against this file by
 `cargo test`) and the app's Privacy screen (`src/views/Privacy.tsx`). Change them together. Paths are relative to the
 app's folder.
@@ -18,12 +18,15 @@ can be turned off, and the app asks you about them before it makes any of them.
 |---|---|---|---|---|
 | A request for the mashup catalog. No identifier, no cookie | sigf.ai | App start | To list the mashups | No: it is the app's content. It is the only request made before you answer the privacy screen |
 | Requests for the list of mashups being built (launchpad) and for the free hosted server regions. No identifier | sigf.ai | App start, after the privacy screen | To show builds in progress and whether "Host on SIGF" is available | No |
+| Requests for what is live (the main stream's build and the launchpad agents building), and each live build's latest picture. No identifier | sigf.ai | Only while the Live tab is open: the list every 15 seconds, the pictures every 4 seconds | To show the live builds | Do not open the Live tab |
 | Update check: a request for the latest version's `latest.json`. No identifier, no data beyond a normal request | GitHub (`github.com`, which redirects to its release file servers `objects.githubusercontent.com` / `release-assets.githubusercontent.com`) | App start, after the privacy screen, then every 6 hours | To tell you when a new SIGF version is out ("SIGF x.y.z is available") | No. GitHub sees your IP address, like any request. The update itself downloads from the same GitHub release only when you click "Update and restart", and the app installs it only if it carries SIGF's release signature |
 | Image requests for game, mashup and creator pictures. These servers can tell which games are on your screen | Steam (`*.steamstatic.com`), Epic Games (`cdn1.epicgames.com`, `cdn2.unrealengine.com`) and Modrinth (`cdn.modrinth.com`) image servers | While pictures are on screen | To show pictures | **Yes**: "Game pictures". Off: plain colored tiles. Pictures already in Steam's own cache on your PC still show (they are read from disk) |
 | The name of a game that has no picture | Steam store search (`store.steampowered.com`, then `api.steampowered.com` with that game's Steam app id) | A tile with no picture (some Ubisoft, GOG and Epic games) | To find its picture. The answer is cached on your PC | **Yes**: "Find missing pictures on Steam". Also off when "Game pictures" is off |
 | The ids of the games you own, among the games SIGF has mashups for | sigf.ai | While the Lobbies tab or a mashup's "Play with friends" panel is open, every 10 seconds | So sigf.ai lists only lobbies you can join | **Yes**: "Lobbies for the games I own". Off: the app gets every public lobby and picks yours on your PC |
 | A request for a mashup's recipe | sigf.ai | When you click Get or join a lobby | To know what to download | You asked for the install |
 | File downloads | GitHub release servers, Modrinth's CDN | When you install a mashup or join a lobby | To install it | You asked for the install. Like any download, these servers see your IP address |
+| Build downloads: pinned source files, and once a compiler and Python. No identifier | GitHub (`github.com` with `codeload.github.com` for source archives, `raw.githubusercontent.com` for single source files, and its release file servers for w64devkit) and python.org (`www.python.org`, the Python 3.12.10 embeddable package) | Only when you install a mashup that builds a file on your PC (`player_build`). The compiler (w64devkit 2.10.0) and Python are downloaded the first time only, then kept in `%LOCALAPPDATA%\SIGF\tools` | To build files SIGF may not distribute (for example a library compiled from a game's decompiled code). Every file is pinned by its hash; the build itself needs no network | You asked for the install. These servers see your IP address |
+| Your own copy of a game file (a ROM you dumped) | Nobody | Only for a mashup that uses one (`own_copies`), when you click Get | SIGF looks for it in your Downloads, Desktop, Documents and ROM folders, or you pick it, checks its SHA-1 on your PC and copies it into that mashup's folder | It never leaves your PC: SIGF never ships, downloads or uploads it. Restore vanilla deletes the copy |
 | A lobby id | sigf.ai | When you open an invite link | To show you the lobby before you confirm the join | You asked to join |
 | Your display name, the lobby mode, the player limit, the join address, and the player count (every 30 seconds) | sigf.ai | Only when you host a lobby | So friends can find and join you | Do not host. **The join address is filled in with your PC's local network (LAN) address only when you click "Use my LAN address"**, or by itself if you chose "Fill in for me" under Privacy. Anyone with the invite link can see the address; a public lobby list never shows it |
 | The lobby and the region you pick | sigf.ai | Only when you choose "Host on SIGF (free)" | To start a Minecraft server for your lobby | Do not use it |
@@ -71,7 +74,8 @@ only the pictures your choices allow.
   [Cloudflare's privacy policy](https://www.cloudflare.com/privacypolicy/).
 
 What stays on your PC only: the list of your games and their folders, downloads, backups of original game files, the
-list of installed mashups, the picture search cache, your privacy choices, the secrets of your hosted lobbies' worlds
+copies of your own game files a mashup uses and the files built for it (inside that mashup's folder, deleted by Restore
+vanilla), the build tools (`%LOCALAPPDATA%\SIGF\tools`, kept for the next build), the list of installed mashups, the picture search cache, your privacy choices, the secrets of your hosted lobbies' worlds
 (for 7 days), and your host display name, all under `%LOCALAPPDATA%\SIGF` and the app's WebView2 profile.
 The program itself is installed in `%LOCALAPPDATA%\Programs\SIGF`. Uninstalling it keeps `%LOCALAPPDATA%\SIGF`
 (it holds the backups of your original game files); delete that folder yourself, once no mashup is installed, to
@@ -82,7 +86,7 @@ remove this data.
 These services have their own privacy policies: [Steam](https://store.steampowered.com/privacy_agreement/),
 [Epic Games](https://www.epicgames.com/site/privacypolicy),
 [GitHub](https://docs.github.com/site-policy/privacy-policies/github-general-privacy-statement),
-[Modrinth](https://modrinth.com/legal/privacy), [Microsoft](https://privacy.microsoft.com/privacystatement),
+[Modrinth](https://modrinth.com/legal/privacy), [Python Software Foundation](https://www.python.org/privacy/), [Microsoft](https://privacy.microsoft.com/privacystatement),
 [Cloudflare](https://www.cloudflare.com/privacypolicy/).
 
 ## Contact
@@ -109,7 +113,8 @@ What SIGF sends, and to whom:
 - sigf.ai lobbies: while the Lobbies tab or "Play with friends" is open, the games you own that SIGF has mashups for, so you only see lobbies you can join. You can turn this off: SIGF then gets every public lobby and picks yours on your PC.
 - sigf.ai, only when you host a lobby: your display name, the lobby settings and the join address. SIGF asks before it puts your PC's local network (LAN) address in it. Anyone with the invite link can see the address. sigf.ai keeps a salted hash of your IP address with the lobby to limit abuse.
 - GitHub: when the app starts and every 6 hours, a check for a newer version of SIGF. Nothing is sent beyond a normal request. An update downloads only when you click "Update and restart".
-- GitHub and Modrinth: file downloads, only when you install a mashup or join a lobby.
+- GitHub and Modrinth: file downloads, only when you install a mashup or join a lobby. A mashup that builds a file on your PC also downloads pinned sources from GitHub and, the first time, a compiler (w64devkit, from GitHub) and Python (from python.org).
+- Nobody: a mashup that uses your own copy of a game file (a ROM you dumped) finds or asks for it on your PC and copies it into its own folder. That file is never uploaded or sent anywhere.
 - Microsoft: only on a PC without WebView2, this installer downloads it.
 
 Your choice: at the end of this installation, SIGF asks whether to allow the requests you can turn off. The first time it starts, it shows each choice again before it sends anything but the catalog request. You can change your choices any time under Privacy in the app.

@@ -10,6 +10,10 @@
 //! - `check_recipe`: the whole catalog rule on a recipe's text (ids, games, steps, destinations, launch, sizes), run by
 //!   the Tauri command handlers on whatever the webview hands them.
 //! - `game_dirs_ok`: the `{game}` folders the UI names must be install folders the core's own scan found.
+//! - Bring your own copy and player builds (`own_copies`, `player_build`): no download at all for an own copy (the
+//!   file comes from the player's PC); a player build's script is a release asset of the recipe's own SIGFAI repo, its
+//!   inputs are commit-pinned GitHub sources (`build_input_url_ok`), its toolchain one of the app's own pinned
+//!   downloads (`install::tools::TOOLS`). Those hosts are allowed for build downloads only (`BUILD_DOWNLOAD_HOSTS`).
 
 use super::recipe::Recipe;
 use super::{mrpack, paths, InstallError};
@@ -30,6 +34,11 @@ pub const DOWNLOAD_HOSTS: &[&str] = &["github.com", "cdn.modrinth.com"];
 /// Where a download may be redirected to: GitHub's release storage and Modrinth's CDN, https only.
 pub const REDIRECT_HOSTS: &[&str] = &["objects.githubusercontent.com", "release-assets.githubusercontent.com", "cdn.modrinth.com"];
 const MODRINTH_CDN: &str = "https://cdn.modrinth.com/data/";
+/// Player builds only (`FetchOpts::build`): where their downloads may start besides `DOWNLOAD_HOSTS`. Commit-pinned
+/// sources on GitHub (`raw.githubusercontent.com`), and python.org for the pinned Python of `install::tools::TOOLS`.
+pub const BUILD_DOWNLOAD_HOSTS: &[&str] = &["raw.githubusercontent.com", "www.python.org"];
+/// Player builds only: GitHub source archives redirect to `codeload.github.com`.
+pub const BUILD_REDIRECT_HOSTS: &[&str] = &["codeload.github.com"];
 
 /// `SIGF_DEV_LOCAL_RECIPES=1`.
 pub fn dev_local_recipes() -> bool {
@@ -73,6 +82,48 @@ pub fn download_start_ok(u: &reqwest::Url) -> bool {
 /// A redirect target a download may follow (`REDIRECT_HOSTS`), https only.
 pub fn redirect_ok(u: &reqwest::Url) -> bool {
     u.scheme() == "https" && u.port().is_none() && u.username().is_empty() && u.host_str().is_some_and(|h| REDIRECT_HOSTS.contains(&h))
+}
+
+/// A player build's download start (`DOWNLOAD_HOSTS` + `BUILD_DOWNLOAD_HOSTS`), https only.
+pub fn build_start_ok(u: &reqwest::Url) -> bool {
+    download_start_ok(u)
+        || (u.scheme() == "https" && u.port().is_none() && u.username().is_empty() && u.host_str().is_some_and(|h| BUILD_DOWNLOAD_HOSTS.contains(&h)))
+}
+
+/// A player build's redirect (`REDIRECT_HOSTS` + `BUILD_REDIRECT_HOSTS`), https only.
+pub fn build_redirect_ok(u: &reqwest::Url) -> bool {
+    redirect_ok(u)
+        || (u.scheme() == "https" && u.port().is_none() && u.username().is_empty() && u.host_str().is_some_and(|h| BUILD_REDIRECT_HOSTS.contains(&h)))
+}
+
+fn hex_ok(s: &str, len: usize) -> bool {
+    s.len() == len && s.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+}
+
+/// A GitHub owner and repo name pair (`owner/repo`).
+fn owner_repo_ok(owner: &str, repo: &str) -> bool {
+    !owner.is_empty() && owner.len() <= 39 && owner.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-') && repo_name_ok(repo)
+}
+
+/// A player build input (docs/RECIPE-FORMAT.md section 4, "Player build"): a GitHub source pinned to a commit, either
+/// the archive of that commit (`https://github.com/<owner>/<repo>/archive/<40 hex>.zip`) or one file of it
+/// (`https://raw.githubusercontent.com/<owner>/<repo>/<40 hex>/<path>`). A branch or tag name is never accepted.
+pub fn build_input_url_ok(url: &str) -> bool {
+    if canonical_https(url).is_none() {
+        return false;
+    }
+    if let Some(rest) = url.strip_prefix("https://github.com/") {
+        let segs: Vec<&str> = rest.split('/').collect();
+        return segs.len() == 4
+            && owner_repo_ok(segs[0], segs[1])
+            && segs[2] == "archive"
+            && segs[3].strip_suffix(".zip").is_some_and(|c| hex_ok(c, 40));
+    }
+    if let Some(rest) = url.strip_prefix("https://raw.githubusercontent.com/") {
+        let segs: Vec<&str> = rest.split('/').collect();
+        return segs.len() >= 4 && segs.len() <= 16 && owner_repo_ok(segs[0], segs[1]) && hex_ok(segs[2], 40) && segs[3..].iter().all(|s| upstream_name_ok(s));
+    }
+    false
 }
 
 /// A location that is not a network URL: `file://` or a bare path.
@@ -156,6 +207,36 @@ impl UrlPolicy {
             segs.len() == 2 && segs.iter().all(|s| seg_ok(s))
         });
         hosted || self.upstream.as_deref().and_then(|p| url.strip_prefix(p)).is_some_and(upstream_name_ok)
+    }
+
+    /// A release asset of the recipe's own SIGFAI repo only (a player build's script: never an upstream file).
+    pub fn hosted_url_ok(&self, url: &str) -> bool {
+        canonical_https(url).is_some()
+            && self.hosted.as_deref().and_then(|p| url.strip_prefix(p)).is_some_and(|tail| {
+                let segs: Vec<&str> = tail.split('/').collect();
+                segs.len() == 2 && segs.iter().all(|s| seg_ok(s))
+            })
+    }
+
+    /// A player build download: its script must be `hosted_url_ok`, an input `build_input_url_ok` or a file of the
+    /// recipe's own releases. Local files only in dev mode.
+    pub fn check_build(&self, location: &str, script: bool) -> Result<(), InstallError> {
+        if is_local(location) {
+            return self.check(location, false);
+        }
+        let ok = if script { self.hosted_url_ok(location) } else { build_input_url_ok(location) || self.hosted_url_ok(location) };
+        if ok {
+            Ok(())
+        } else {
+            Err(InstallError::Download {
+                url: location.into(),
+                message: if script {
+                    "a build script must be a release file of the mod's own SIGFAI repo".into()
+                } else {
+                    "a build input must be a commit-pinned GitHub source or a release file of the mod's own SIGFAI repo".into()
+                },
+            })
+        }
     }
 
     /// A file listed inside an mrpack (`modrinth.index.json` downloads): Modrinth's CDN, or what `recipe_url_ok` allows.
@@ -400,6 +481,15 @@ pub fn check_recipe(text: &str, allow_local: bool) -> Result<Recipe, InstallErro
             return Err(bad("bad file name"));
         }
     }
+    let steps: Vec<(&str, &str)> =
+        install.iter().filter_map(|e| Some((e.get("game")?.as_str()?, e.get("strategy")?.as_str()?))).collect();
+    let game_ids: Vec<&str> = games.iter().filter_map(|g| g.get("game").and_then(Value::as_str)).collect();
+    if let Some(o) = r.get("own_copies") {
+        own_copies_ok(o, &game_ids, &steps).map_err(|m| bad(format!("bad own_copies: {m}")))?;
+    }
+    if let Some(b) = r.get("player_build") {
+        player_build_ok(b, &steps, &policy).map_err(|m| bad(format!("bad player_build: {m}")))?;
+    }
     let src = r.get("source").and_then(Value::as_object).ok_or_else(|| bad("bad source"))?;
     let repo_matches = src.get("repo").and_then(Value::as_str).is_some_and(|s| s.trim_end_matches('/') == hosted);
     if !(repo_matches || upstream_fusion(&recipe, &hosted)) || !text_ok(src.get("license").unwrap_or(&Value::Null), 40) {
@@ -409,6 +499,194 @@ pub fn check_recipe(text: &str, allow_local: bool) -> Result<Recipe, InstallErro
         return Err(bad("bad media"));
     }
     Ok(recipe)
+}
+
+// ---------- bring your own copy, player builds ----------
+
+/// Most own copies / player builds a recipe may ask for.
+pub const OWN_COPIES_MAX: usize = 3;
+pub const PLAYER_BUILDS_MAX: usize = 2;
+/// Largest own copy (a ROM or a disc file), and the largest one normalized in memory (`format: "n64"`).
+pub const OWN_MAX_BYTES: u64 = 2 * 1024 * 1024 * 1024;
+pub const OWN_NORMALIZE_MAX_BYTES: u64 = 256 * 1024 * 1024;
+/// Largest build script and build input.
+pub const BUILD_SCRIPT_MAX_BYTES: u64 = 1024 * 1024;
+pub const BUILD_INPUT_MAX_BYTES: u64 = 512 * 1024 * 1024;
+pub const BUILD_INPUTS_MAX: usize = 16;
+pub const BUILD_OUTPUTS_MAX: usize = 8;
+/// Own copy formats: `n64` normalizes byte order (`.v64`, `.n64` -> `.z64`) before hashing.
+pub const OWN_FORMATS: &[&str] = &["n64"];
+
+/// A plain file name: `[A-Za-z0-9._+-]{1,100}`, not dot-led, no `..`.
+pub fn file_name_ok(s: &str) -> bool {
+    upstream_name_ok(s) && s.len() <= 100 && !s.starts_with('.')
+}
+
+/// Where an own copy or a build output goes: `{instance}` (the step's Prism instance folder, `mrpack` steps only) or
+/// `{app}` (the step's own SIGF folder), then plain relative segments. Both are deleted by Restore.
+pub fn byo_to_ok(to: &str, mrpack: bool) -> bool {
+    if to.chars().count() > 300 {
+        return false;
+    }
+    let rest = if let Some(r) = to.strip_prefix("{instance}") {
+        if !mrpack {
+            return false;
+        }
+        r
+    } else if let Some(r) = to.strip_prefix("{app}") {
+        r
+    } else {
+        return false;
+    };
+    rest.is_empty() || rest.strip_prefix('/').is_some_and(plain_segments)
+}
+
+fn str_list(v: Option<&Value>, min: usize, max: usize, each: impl Fn(&str) -> bool) -> Result<Vec<&str>, ()> {
+    let a = v.and_then(Value::as_array).filter(|a| a.len() >= min && a.len() <= max).ok_or(())?;
+    let out: Vec<&str> = a.iter().filter_map(Value::as_str).filter(|s| each(s)).collect();
+    if out.len() != a.len() {
+        return Err(());
+    }
+    Ok(out)
+}
+
+/// `own_copies` (docs/RECIPE-FORMAT.md section 4, "Bring your own copy"). Same rule as the catalog's `ownCopiesOk`.
+pub fn own_copies_ok(v: &Value, games: &[&str], steps: &[(&str, &str)]) -> Result<(), String> {
+    let a = v.as_array().filter(|a| (1..=OWN_COPIES_MAX).contains(&a.len())).ok_or("1 to 3 copies")?;
+    let mut seen = vec![];
+    for c in a {
+        let c = c.as_object().ok_or("not an object")?;
+        let game = c.get("game").and_then(Value::as_str).filter(|g| games.contains(g)).ok_or("game must be one of games[]")?;
+        if seen.contains(&game) {
+            return Err(format!("{game} twice"));
+        }
+        seen.push(game);
+        if !text_ok(c.get("label").unwrap_or(&Value::Null), 80) {
+            return Err("label".into());
+        }
+        let rom = c.get("rom").and_then(Value::as_object).ok_or("rom")?;
+        if !rom.get("as").and_then(Value::as_str).is_some_and(file_name_ok) {
+            return Err("rom.as".into());
+        }
+        str_list(rom.get("sha1"), 1, 16, |h| hex_ok(h, 40)).map_err(|_| "rom.sha1: 1 to 16 lowercase SHA-1s")?;
+        str_list(rom.get("extensions"), 1, 8, |e| {
+            e.len() >= 2 && e.len() <= 9 && e.starts_with('.') && e[1..].bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit())
+        })
+        .map_err(|_| "rom.extensions")?;
+        if rom.get("size").is_some_and(|s| !s.as_u64().is_some_and(|n| n > 0 && n <= OWN_MAX_BYTES)) {
+            return Err("rom.size".into());
+        }
+        if let Some(f) = rom.get("format") {
+            if !f.as_str().is_some_and(|f| OWN_FORMATS.contains(&f)) {
+                return Err("rom.format".into());
+            }
+            if !rom.get("size").and_then(Value::as_u64).is_some_and(|n| n <= OWN_NORMALIZE_MAX_BYTES && n % 4 == 0) {
+                return Err("rom.format needs rom.size (a multiple of 4, at most 256 MiB)".into());
+            }
+        }
+        if c.get("names").is_some() {
+            str_list(c.get("names"), 0, 8, |n| !n.trim().is_empty() && n.chars().count() <= 40 && !n.contains(['\r', '\n', '\0']))
+                .map_err(|_| "names")?;
+        }
+        let step = c.get("step").and_then(Value::as_str).ok_or("step")?;
+        let strategy = steps.iter().find(|(g, _)| *g == step).map(|(_, s)| *s).ok_or("step must be an install step's game")?;
+        if !c.get("to").and_then(Value::as_str).is_some_and(|t| byo_to_ok(t, strategy == "mrpack")) {
+            return Err("to".into());
+        }
+    }
+    Ok(())
+}
+
+/// `player_build` (docs/RECIPE-FORMAT.md section 4, "Player build"). Same rule as the catalog's `playerBuildOk`.
+pub fn player_build_ok(v: &Value, steps: &[(&str, &str)], policy: &UrlPolicy) -> Result<(), String> {
+    let a = v.as_array().filter(|a| (1..=PLAYER_BUILDS_MAX).contains(&a.len())).ok_or("1 or 2 builds")?;
+    let mut ids = vec![];
+    for b in a {
+        let b = b.as_object().ok_or("not an object")?;
+        let id = b.get("id").and_then(Value::as_str).filter(|i| game_ok(&Value::String(i.to_string()))).ok_or("id")?;
+        if ids.contains(&id) {
+            return Err(format!("{id} twice"));
+        }
+        ids.push(id);
+        if !text_ok(b.get("label").unwrap_or(&Value::Null), 80) {
+            return Err("label".into());
+        }
+        let step = b.get("step").and_then(Value::as_str).ok_or("step")?;
+        let strategy = steps.iter().find(|(g, _)| *g == step).map(|(_, s)| *s).ok_or("step must be an install step's game")?;
+        let tools = str_list(b.get("toolchain"), 1, 4, |t| super::tools::find(t).is_some()).map_err(|_| "toolchain: ids of the app's pinned tools only")?;
+        if !tools.iter().any(|t| super::tools::find(t).is_some_and(|t| t.shell.is_some())) {
+            return Err("toolchain needs a shell (w64devkit)".into());
+        }
+        if tools.iter().enumerate().any(|(i, t)| tools[..i].contains(t)) {
+            return Err("toolchain twice".into());
+        }
+        let file = |f: &Value, script: bool| -> Result<String, String> {
+            let f = f.as_object().ok_or("file")?;
+            let name = f.get("name").and_then(Value::as_str).filter(|n| file_name_ok(n)).ok_or("file name")?;
+            let url = f.get("url").and_then(Value::as_str).ok_or("url")?;
+            policy.check_build(url, script).map_err(|e| e.to_string())?;
+            if !sha_ok(f.get("sha256").unwrap_or(&Value::Null)) {
+                return Err(format!("sha256 of {name}"));
+            }
+            let max = if script { BUILD_SCRIPT_MAX_BYTES } else { BUILD_INPUT_MAX_BYTES };
+            if !f.get("size").and_then(Value::as_u64).is_some_and(|n| n <= max) {
+                return Err(format!("size of {name}"));
+            }
+            let unpack = match f.get("unpack") {
+                None => false,
+                Some(Value::Bool(u)) if !script => *u,
+                Some(_) => return Err(format!("unpack of {name}")),
+            };
+            if let Some(r) = f.get("root") {
+                if !unpack || !r.as_str().is_some_and(|r| r.chars().count() <= 200 && paths::plain_rel(r)) {
+                    return Err(format!("root of {name}"));
+                }
+            }
+            Ok(name.to_string())
+        };
+        let script = file(b.get("script").unwrap_or(&Value::Null), true)?;
+        if !script.ends_with(".sh") {
+            return Err("script must be a .sh".into());
+        }
+        let mut names = vec![];
+        if let Some(i) = b.get("inputs") {
+            let i = i.as_array().filter(|i| i.len() <= BUILD_INPUTS_MAX).ok_or("inputs")?;
+            for f in i {
+                let n = file(f, false)?;
+                if names.contains(&n) {
+                    return Err(format!("input {n} twice"));
+                }
+                names.push(n);
+            }
+        }
+        let outs = b.get("outputs").and_then(Value::as_array).filter(|o| (1..=BUILD_OUTPUTS_MAX).contains(&o.len())).ok_or("outputs")?;
+        let mut out_names = vec![];
+        for o in outs {
+            let o = o.as_object().ok_or("output")?;
+            let n = o.get("name").and_then(Value::as_str).filter(|n| file_name_ok(n)).ok_or("output name")?;
+            if out_names.contains(&n) {
+                return Err(format!("output {n} twice"));
+            }
+            out_names.push(n);
+            if !o.get("to").and_then(Value::as_str).is_some_and(|t| byo_to_ok(t, strategy == "mrpack")) {
+                return Err(format!("output {n}: to"));
+            }
+        }
+        if b.get("minutes").is_some_and(|m| !m.as_u64().is_some_and(|m| (1..=60).contains(&m))) {
+            return Err("minutes".into());
+        }
+    }
+    Ok(())
+}
+
+/// A player build's downloads: (url, sha256, size, is the script).
+pub fn planned_build_downloads(r: &Recipe) -> Vec<(String, String, Option<u64>, bool)> {
+    let mut out = vec![];
+    for b in &r.player_build {
+        out.push((b.script.url.clone(), b.script.sha256.clone(), b.script.size, true));
+        out.extend(b.inputs.iter().map(|i| (i.url.clone(), i.sha256.clone(), i.size, false)));
+    }
+    out
 }
 
 /// Every download a recipe plans (requires sources, install files, packs) with its declared size.
@@ -606,6 +884,131 @@ mod tests {
         v["launch"][0]["exe"] = json!("{game}/skse64_loader.exe");
         v["requires"] = json!([{ "id": "skse64", "page": "https://skse.silverlock.org/" }]);
         ok(&v).unwrap();
+    }
+
+    const SHA1: &str = "9bef1128717f958171a4afac3ed78ee2bb4e86ce";
+
+    /// A Minecraft recipe with an own copy and a player build, as the Mario 64 in Minecraft recipe has them.
+    fn byo() -> Value {
+        let rel = "https://github.com/SIGFAI/demo/releases/download/v1.0.0/";
+        json!({ "id": "sigf/demo", "version": "1.0.0", "name": "Demo", "kind": "mashup",
+            "games": [{ "game": "minecraft", "role": "host" }, { "game": "sm64", "role": "guest" }],
+            "install": [{ "game": "minecraft", "strategy": "mrpack", "pack": { "url": format!("{rel}demo.mrpack"), "sha256": SHA, "size": 10 } }],
+            "files": [{ "name": "demo.mrpack", "url": format!("{rel}demo.mrpack"), "sha256": SHA, "size": 10 }],
+            "own_copies": [{ "game": "sm64", "label": "Super Mario 64 (USA)", "names": ["mario 64"], "step": "minecraft",
+                "rom": { "as": "baserom.us.z64", "sha1": [SHA1], "extensions": [".z64", ".v64", ".n64"], "size": 8388608, "format": "n64" },
+                "to": "{instance}/.minecraft/config/mario64" }],
+            "player_build": [{ "id": "sm64-dll", "label": "Mario library", "step": "minecraft", "toolchain": ["w64devkit-2.10.0", "python-3.12.10"],
+                "script": { "name": "build.sh", "url": format!("{rel}build.sh"), "sha256": SHA, "size": 100 },
+                "inputs": [
+                    { "name": "libsm64", "url": format!("https://github.com/libsm64/libsm64/archive/{COMMIT}.zip"), "sha256": SHA, "size": 1000, "unpack": true, "root": format!("libsm64-{COMMIT}") },
+                    { "name": "geo.inc.c", "url": format!("https://raw.githubusercontent.com/n64decomp/sm64/{COMMIT}/actors/mario/geo.inc.c"), "sha256": SHA, "size": 1000 }
+                ],
+                "outputs": [{ "name": "sm64.dll", "to": "{instance}/.minecraft/config/mario64" }], "minutes": 5 }],
+            "source": { "repo": "https://github.com/SIGFAI/demo", "license": "MIT" } })
+    }
+
+    #[test]
+    fn own_copies_and_player_build_pass() {
+        let r = ok(&byo()).unwrap();
+        assert_eq!(r.own_copies[0].rom.save_as, "baserom.us.z64");
+        assert_eq!(planned_build_downloads(&r).len(), 3);
+        // Never among the downloads the app plans for the mod itself.
+        assert!(planned_downloads(&r).iter().all(|(u, _, _)| !u.contains("libsm64") && !u.contains("build.sh")));
+    }
+
+    #[test]
+    fn own_copies_and_player_build_are_strict() {
+        let cases: Vec<(&str, Box<dyn Fn(&mut Value)>)> = vec![
+            ("copy game not in games", Box::new(|v| v["own_copies"][0]["game"] = json!("zelda"))),
+            ("copy sha1 upper", Box::new(|v| v["own_copies"][0]["rom"]["sha1"] = json!([SHA1.to_uppercase()]))),
+            ("copy sha1 sha256", Box::new(|v| v["own_copies"][0]["rom"]["sha1"] = json!([SHA]))),
+            ("copy sha1 empty", Box::new(|v| v["own_copies"][0]["rom"]["sha1"] = json!([]))),
+            ("copy as path", Box::new(|v| v["own_copies"][0]["rom"]["as"] = json!("../evil.dll"))),
+            ("copy as sub", Box::new(|v| v["own_copies"][0]["rom"]["as"] = json!("a/b.z64"))),
+            ("copy ext", Box::new(|v| v["own_copies"][0]["rom"]["extensions"] = json!(["z64"]))),
+            ("copy format", Box::new(|v| v["own_copies"][0]["rom"]["format"] = json!("psx"))),
+            ("copy format no size", Box::new(|v| {
+                v["own_copies"][0]["rom"].as_object_mut().unwrap().remove("size");
+            })),
+            ("copy to game", Box::new(|v| v["own_copies"][0]["to"] = json!("{game}/x"))),
+            ("copy to escape", Box::new(|v| v["own_copies"][0]["to"] = json!("{instance}/../x"))),
+            ("copy to abs", Box::new(|v| v["own_copies"][0]["to"] = json!("C:/Windows"))),
+            ("copy step", Box::new(|v| v["own_copies"][0]["step"] = json!("sm64"))),
+            ("copy label", Box::new(|v| {
+                v["own_copies"][0].as_object_mut().unwrap().remove("label");
+            })),
+            ("copies too many", Box::new(|v| {
+                let c = v["own_copies"][0].clone();
+                v["own_copies"] = json!([c.clone(), c.clone(), c.clone(), c]);
+            })),
+            ("copy twice", Box::new(|v| {
+                let c = v["own_copies"][0].clone();
+                v["own_copies"] = json!([c.clone(), c]);
+            })),
+            ("tool unknown", Box::new(|v| v["player_build"][0]["toolchain"] = json!(["w64devkit-2.10.0", "msys2"]))),
+            ("tool no shell", Box::new(|v| v["player_build"][0]["toolchain"] = json!(["python-3.12.10"]))),
+            ("tool twice", Box::new(|v| v["player_build"][0]["toolchain"] = json!(["w64devkit-2.10.0", "w64devkit-2.10.0"]))),
+            ("script upstream", Box::new(|v| v["player_build"][0]["script"]["url"] = json!(format!("https://raw.githubusercontent.com/x/y/{COMMIT}/build.sh")))),
+            ("script other repo", Box::new(|v| v["player_build"][0]["script"]["url"] = json!("https://github.com/SIGFAI/other/releases/download/v1/build.sh"))),
+            ("script not sh", Box::new(|v| v["player_build"][0]["script"]["name"] = json!("build.ps1"))),
+            ("script no size", Box::new(|v| {
+                v["player_build"][0]["script"].as_object_mut().unwrap().remove("size");
+            })),
+            ("script big", Box::new(|v| v["player_build"][0]["script"]["size"] = json!(BUILD_SCRIPT_MAX_BYTES + 1))),
+            ("input branch", Box::new(|v| v["player_build"][0]["inputs"][1]["url"] = json!("https://raw.githubusercontent.com/n64decomp/sm64/master/actors/mario/geo.inc.c"))),
+            ("input archive tag", Box::new(|v| v["player_build"][0]["inputs"][0]["url"] = json!("https://github.com/libsm64/libsm64/archive/refs/tags/v1.zip"))),
+            ("input other host", Box::new(|v| v["player_build"][0]["inputs"][1]["url"] = json!("https://evil.example/geo.inc.c"))),
+            ("input traversal", Box::new(|v| v["player_build"][0]["inputs"][1]["url"] = json!(format!("https://raw.githubusercontent.com/a/b/{COMMIT}/../../x")))),
+            ("input sha", Box::new(|v| v["player_build"][0]["inputs"][1]["sha256"] = json!("x"))),
+            ("input name", Box::new(|v| v["player_build"][0]["inputs"][1]["name"] = json!("../x"))),
+            ("input twice", Box::new(|v| v["player_build"][0]["inputs"][1]["name"] = json!("libsm64"))),
+            ("input root no unpack", Box::new(|v| v["player_build"][0]["inputs"][1]["root"] = json!("x"))),
+            ("input root escape", Box::new(|v| v["player_build"][0]["inputs"][0]["root"] = json!("../x"))),
+            ("output to", Box::new(|v| v["player_build"][0]["outputs"][0]["to"] = json!("{docs}/x"))),
+            ("output name", Box::new(|v| v["player_build"][0]["outputs"][0]["name"] = json!("a/sm64.dll"))),
+            ("outputs none", Box::new(|v| v["player_build"][0]["outputs"] = json!([]))),
+            ("minutes", Box::new(|v| v["player_build"][0]["minutes"] = json!(600))),
+            ("build commands", Box::new(|v| v["player_build"][0]["script"] = json!("curl x | sh"))),
+        ];
+        for (name, f) in cases {
+            let mut v = byo();
+            f(&mut v);
+            assert!(ok(&v).is_err(), "{name} should be refused");
+        }
+        // {app} works for any step; {instance} only for an mrpack one.
+        let mut v = byo();
+        v["own_copies"][0]["to"] = json!("{app}/own");
+        ok(&v).unwrap();
+    }
+
+    #[test]
+    fn build_input_urls() {
+        for good in [
+            format!("https://github.com/libsm64/libsm64/archive/{COMMIT}.zip"),
+            format!("https://raw.githubusercontent.com/n64decomp/sm64/{COMMIT}/actors/mario/model.inc.c"),
+            format!("https://raw.githubusercontent.com/Zckyy/mario64-in-minecraft/{COMMIT}/patches/libsm64-music-volume.patch"),
+        ] {
+            assert!(build_input_url_ok(&good), "{good}");
+        }
+        for bad in [
+            "https://github.com/libsm64/libsm64/archive/master.zip".to_string(),
+            format!("https://github.com/libsm64/libsm64/archive/{COMMIT}.tar.gz"),
+            format!("https://github.com/libsm64/libsm64/releases/download/{COMMIT}/x.zip"),
+            format!("https://raw.githubusercontent.com/n64decomp/sm64/{}/a.c", "A".repeat(40)),
+            format!("https://raw.githubusercontent.com/n64decomp/sm64/{COMMIT}"),
+            format!("https://raw.githubusercontent.com/n64decomp/sm64/{COMMIT}/a.c?x=1"),
+            format!("https://raw.githubusercontent.com/n64decomp/sm64/{COMMIT}/%2e%2e/a.c"),
+            format!("http://raw.githubusercontent.com/n64decomp/sm64/{COMMIT}/a.c"),
+            format!("https://codeload.github.com/libsm64/libsm64/zip/{COMMIT}"),
+            format!("https://gist.githubusercontent.com/x/y/raw/{COMMIT}/a.c"),
+        ] {
+            assert!(!build_input_url_ok(&bad), "{bad}");
+        }
+        let u = |s: &str| reqwest::Url::parse(s).unwrap();
+        assert!(build_start_ok(&u("https://www.python.org/ftp/python/3.12.10/python-3.12.10-embed-amd64.zip")));
+        assert!(!download_start_ok(&u("https://www.python.org/ftp/python/3.12.10/python-3.12.10-embed-amd64.zip")), "mods never start on python.org");
+        assert!(build_redirect_ok(&u("https://codeload.github.com/a/b/zip/x")) && !redirect_ok(&u("https://codeload.github.com/a/b/zip/x")));
     }
 
     #[test]

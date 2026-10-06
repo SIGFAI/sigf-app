@@ -1,7 +1,7 @@
 import type { Ctx } from '../App';
 import type { Mashup } from '../data/catalog';
 import { GAME } from '../data/games';
-import { Avatar, Icon, MashupCover, fmtCount } from '../ui';
+import { Avatar, Icon, MashupCover, fmtCount, shownDownloads } from '../ui';
 import { inTauri } from '../lib/api';
 
 export const missing = (ctx: Ctx, m: Mashup) => m.needs.filter((g) => !ctx.owned.has(g));
@@ -33,7 +33,7 @@ export function ActionButton({ ctx, m, big = false }: { ctx: Ctx; m: Mashup; big
     );
   }
   if (inst.phase !== 'ready') {
-    const label = inst.phase === 'download' ? 'Downloading' : inst.phase === 'verify' ? 'Verifying' : 'Installing';
+    const label = inst.phase === 'download' ? 'Downloading' : inst.phase === 'verify' ? 'Verifying' : inst.phase === 'build' ? 'Building' : 'Installing';
     return (
       <button className={`${cls} act-busy`} onClick={(e) => e.stopPropagation()} style={{ ['--p' as string]: `${Math.round(inst.pct)}%` }}>
         <span>{label}</span> <small>{Math.round(inst.pct)}%</small>
@@ -80,7 +80,8 @@ export function Card({ ctx, m, i = 0 }: { ctx: Ctx; m: Mashup; i?: number }) {
         <div className="card-foot">
           <span className="meta">
             {m.avatar ? <Avatar src={m.avatar} /> : m.by.agent && <i className="dot-agent" title="Built by an AI agent" />}
-            {m.by.agent ? m.by.name.replace(/^SIGF agent /, '$') : m.by.name}{m.plays > 0 && ` · ${fmtCount(m.plays)}`}
+            {m.by.agent ? m.by.name.replace(/^SIGF agent /, '$') : m.by.name}
+            {shownDownloads(m.downloads) && <span className="card-dl" title={`${m.downloads.toLocaleString('en-US')} downloads from GitHub`}><Icon name="download" size={11} />{fmtCount(m.downloads)}</span>}
           </span>
           <ActionButton ctx={ctx} m={m} />
         </div>
