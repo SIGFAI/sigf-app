@@ -3,6 +3,7 @@ pub mod install;
 pub mod join;
 pub mod launch;
 pub mod privacy;
+pub mod report;
 pub mod scan;
 pub mod update;
 
@@ -12,7 +13,7 @@ use tauri::{Emitter, Manager};
 use tauri_plugin_deep_link::DeepLinkExt;
 use tauri_plugin_opener::OpenerExt;
 
-/// Store URI schemes the app may hand to Windows. Anything else is refused.
+/// Store URI schemes the app may hand to the system (Windows, macOS). Anything else is refused.
 const LAUNCH_SCHEMES: &[&str] = &["steam://", "com.epicgames.launcher://", "uplay://", "goggalaxy://"];
 
 /// One install/restore at a time: they share installed.json and may touch the same game folder.
@@ -130,6 +131,7 @@ async fn install(
     blocking(move || {
         // The webview is not trusted: the recipe is held to the catalog's whole rule, the folders to the scan.
         let recipe = install::check::check_recipe(&recipe_json, dev_local())?;
+        install::platform::require_here(&recipe)?;
         check_game_dirs(&game_dirs)?;
         let mut engine = engine(detect_prism());
         engine.own = own_picks(&recipe.id);
@@ -207,18 +209,18 @@ async fn own_copy_pick(window: tauri::WebviewWindow, recipe_json: String, game: 
 }
 
 /// The native open-file dialog for one own copy, filtered on its extensions (and `.zip`), over the app's window.
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 async fn pick_file(window: &tauri::WebviewWindow, c: &install::recipe::OwnCopy) -> Option<std::path::PathBuf> {
     let exts: Vec<String> = c.rom.extensions.iter().map(|e| e.trim_start_matches('.').to_string()).chain(["zip".to_string()]).collect();
     let mut d = rfd::AsyncFileDialog::new().set_title(format!("Pick your own copy of {}", c.label)).add_filter(&c.label, &exts);
-    if let Some(dl) = std::env::var_os("USERPROFILE").map(|h| std::path::PathBuf::from(h).join("Downloads")).filter(|d| d.is_dir()) {
+    if let Some(dl) = install::user_home().map(|h| h.join("Downloads")).filter(|d| d.is_dir()) {
         d = d.set_directory(dl);
     }
     d = d.set_parent(window);
     d.pick_file().await.map(|f| f.path().to_path_buf())
 }
 
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "macos")))]
 async fn pick_file(_window: &tauri::WebviewWindow, _c: &install::recipe::OwnCopy) -> Option<std::path::PathBuf> {
     None
 }
@@ -368,6 +370,12 @@ fn hosted_forget(lobby: String) -> Result<Vec<hosted::HostedEntry>, String> {
     hosted::forget(&hosted::store_path(), &lobby)
 }
 
+/// The system this build runs on (`windows`, `macos`), for the catalog's `platforms` and the platform's own links.
+#[tauri::command]
+fn app_platform() -> &'static str {
+    install::platform::current()
+}
+
 /// The privacy choices in force (docs/PRIVACY.md).
 #[tauri::command]
 fn privacy_get() -> privacy::Privacy {
@@ -378,6 +386,14 @@ fn privacy_get() -> privacy::Privacy {
 #[tauri::command]
 fn privacy_set(choices: privacy::Privacy) -> Result<privacy::Privacy, String> {
     privacy::set(choices)
+}
+
+/// "Report a bug": the scrubbed report and its GitHub link, for the player to review. Nothing is sent: the UI shows
+/// it, and opens the link in the browser only when the player clicks (src/report.rs).
+#[tauri::command]
+async fn bug_report(app: tauri::AppHandle, input: report::ReportInput) -> Result<report::Report, String> {
+    let version = app.package_info().version.to_string();
+    tauri::async_runtime::spawn_blocking(move || report::make(&input, &version)).await.map_err(|e| e.to_string())
 }
 
 /// Invite links received since the last call (lobby ids, already checked).
@@ -413,13 +429,7 @@ fn steam_args(args: &[String]) -> String {
         .map(|a| if a.contains(' ') { format!("\"{a}\"") } else { a.clone() })
         .collect::<Vec<_>>()
         .join(" ");
-    joined
-        .bytes()
-        .map(|b| match b {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => (b as char).to_string(),
-            _ => format!("%{b:02X}"),
-        })
-        .collect()
+    report::encode(&joined)
 }
 
 /// `stores` maps canonical game id -> (store, store id, store launch uri) from the last scan.
@@ -444,22 +454,61 @@ impl launch::Steam for DesktopSteam<'_> {
     }
 }
 
-/// Starts an installed mashup, in the recipe's launch order. Minecraft sides go through Prism (`--launch <instance>`)
-/// and start first, so a passthrough bridge is listening before the host game boots; a game with a launch `exe` (script
-/// extender loader) is started from its folder, Steam first when it is a Steam game; any other through its store. A
-/// game whose launch step has `wait: "port:<n>"` holds the next one until that local port answers.
+/// How one installed game starts, worked out before anything is started: a missing loader, me3 or profile fails Play
+/// while nothing runs yet (a passthrough never leaves a hidden Minecraft behind).
+enum Start {
+    Prism(std::path::PathBuf, String),
+    /// The checked exe, the folder it starts in, and whether it is the mashup's own `app_exe` (no Steam wait).
+    Exe { exe: std::path::PathBuf, dir: String, own: bool },
+    Me3(launch::Me3Command),
+    Store,
+}
+
+/// The player's me3 from its installer (`launch::me3_installed_path`), on Windows only.
+fn me3_installed() -> Option<std::path::PathBuf> {
+    if !cfg!(windows) {
+        return None;
+    }
+    install::user_data_dir().and_then(|d| launch::me3_installed_path(&d))
+}
+
+fn prepare(g: &install::InstalledGame) -> Result<Start, launch::PlayError> {
+    if g.strategy == install::Strategy::Mrpack {
+        let prism = detect_prism().and_then(|p| p.exe).ok_or("Prism Launcher not found".to_string())?;
+        let inst = g.instance.clone().ok_or("instance missing from the install record".to_string())?;
+        return Ok(Start::Prism(prism, inst));
+    }
+    if let Some(m) = &g.me3 {
+        return Ok(Start::Me3(launch::me3_command(m, me3_installed().as_deref())?));
+    }
+    if let Some(x) = &g.exe {
+        return Ok(Start::Exe { exe: launch::resolve_exe(x)?, dir: x.dir.clone(), own: x.own });
+    }
+    Ok(Start::Store)
+}
+
+/// Starts an installed mashup, in the recipe's launch order; a game its `launch[]` leaves out (`no_start`) is never
+/// started (the mod starts it, hidden). First, with nothing started yet: the recipe's
+/// `requires_files` (a missing prerequisite is a `missingFile` error with its page) and every game's loader, me3 and
+/// profile. Then Minecraft sides go through Prism (`--launch <instance>`) and start first, so a passthrough bridge is
+/// listening before the host game boots; a game with a launch `exe` or `app_exe` is started from its folder (Steam
+/// first when it is a Steam game's loader), a `me3` one through me3 with its profile, offline; any other through its
+/// store. A game whose launch step has `wait: "port:<n>"` holds the next one until that local port answers.
 /// With a join: Prism also gets `--server`, a connect engine `+connect`, any other game `{app}/sigf-join.json`.
 /// Blocking (port and Steam waits): call it off the main thread.
-fn play_mod(app: &tauri::AppHandle, id: &str, stores: &Stores, join: Option<JoinPlan>) -> Result<(), String> {
+fn play_mod(app: &tauri::AppHandle, id: &str, stores: &Stores, join: Option<JoinPlan>) -> Result<(), launch::PlayError> {
     let m = install::Engine::from_env(None)
         .installed()
         .into_iter()
         .find(|m| m.id == id)
         .ok_or_else(|| format!("{id} is not installed"))?;
-    let mut games = m.games.clone();
+    launch::check_required(&m.requires_files)?;
+    // A game the recipe's launch[] leaves out is started by the mod itself (or by another tool): never by Play.
+    let mut games: Vec<install::InstalledGame> = m.games.iter().filter(|g| !g.no_start).cloned().collect();
     games.sort_by_key(|g| g.strategy != install::Strategy::Mrpack);
-    for (i, g) in games.iter().enumerate() {
-        start_game(app, id, g, stores, join.as_ref())?;
+    let starts = games.iter().map(prepare).collect::<Result<Vec<_>, _>>()?;
+    for (i, (g, s)) in games.iter().zip(starts).enumerate() {
+        start_game(app, id, g, s, stores, join.as_ref())?;
         if let (Some(w), true) = (g.wait.as_deref(), i + 1 < games.len()) {
             let port = launch::parse_wait(w).ok_or_else(|| format!("bad launch wait for {}: {w}", g.game))?;
             launch::wait_port(port, launch::PORT_TIMEOUT, launch::POLL).map_err(|e| format!("{}: {e}", g.game))?;
@@ -468,7 +517,7 @@ fn play_mod(app: &tauri::AppHandle, id: &str, stores: &Stores, join: Option<Join
     Ok(())
 }
 
-fn start_game(app: &tauri::AppHandle, id: &str, g: &install::InstalledGame, stores: &Stores, join: Option<&JoinPlan>) -> Result<(), String> {
+fn start_game(app: &tauri::AppHandle, id: &str, g: &install::InstalledGame, start: Start, stores: &Stores, join: Option<&JoinPlan>) -> Result<(), String> {
     let addr = join.and_then(|j| j.targets.get(&g.game)).map(String::as_str);
     if let Some(a) = addr {
         if !join::valid_address(a) {
@@ -476,10 +525,8 @@ fn start_game(app: &tauri::AppHandle, id: &str, g: &install::InstalledGame, stor
         }
     }
     let kind = join::join_kind(g.strategy, &g.game);
-    if g.strategy == install::Strategy::Mrpack {
-        let prism = detect_prism().and_then(|p| p.exe).ok_or("Prism Launcher not found")?;
-        let inst = g.instance.clone().ok_or("instance missing from the install record")?;
-        std::process::Command::new(prism).args(join::prism_args(&inst, addr)).spawn().map_err(|e| e.to_string())?;
+    if let Start::Prism(prism, inst) = &start {
+        std::process::Command::new(prism).args(join::prism_args(inst, addr)).spawn().map_err(|e| e.to_string())?;
         return Ok(());
     }
     if let (join::JoinKind::Mod, Some(a), Some(j)) = (kind, addr, join) {
@@ -489,17 +536,29 @@ fn start_game(app: &tauri::AppHandle, id: &str, g: &install::InstalledGame, stor
     }
     let store = stores.get(&g.game);
     let args = join::store_join_args(kind, &g.launch_args, addr);
-    if let Some(x) = &g.exe {
-        let exe = launch::resolve_exe(x)?;
-        if store.is_some_and(|(s, _, _)| s == "steam") {
-            launch::ensure_steam(&DesktopSteam(app), launch::STEAM_TIMEOUT, launch::POLL)?;
+    // A Steam game's loader or me3 needs Steam up first; the mashup's own `app_exe` is not a game and never waits.
+    let needs_steam = match &start {
+        Start::Me3(_) => true,
+        Start::Exe { own, .. } => !own,
+        Start::Prism(..) | Start::Store => false,
+    };
+    if needs_steam && store.is_some_and(|(s, _, _)| s == "steam") {
+        launch::ensure_steam(&DesktopSteam(app), launch::STEAM_TIMEOUT, launch::POLL)?;
+    }
+    match start {
+        Start::Me3(c) => {
+            std::process::Command::new(&c.exe).args(&c.args).current_dir(&c.cwd).spawn().map_err(|e| format!("{}: {e}", c.exe.display()))?;
+            return Ok(());
         }
-        std::process::Command::new(&exe)
-            .args(&args)
-            .current_dir(&x.dir)
-            .spawn()
-            .map_err(|e| format!("{}: {e}", exe.display()))?;
-        return Ok(());
+        Start::Exe { exe, dir, .. } => {
+            std::process::Command::new(&exe)
+                .args(&args)
+                .current_dir(&dir)
+                .spawn()
+                .map_err(|e| format!("{}: {e}", exe.display()))?;
+            return Ok(());
+        }
+        Start::Prism(..) | Start::Store => {}
     }
     let Some((store, store_id, uri)) = store else { return Ok(()) };
     if store == "steam" && !(!store_id.is_empty() && store_id.len() <= 10 && store_id.bytes().all(|b| b.is_ascii_digit())) {
@@ -514,8 +573,8 @@ fn start_game(app: &tauri::AppHandle, id: &str, g: &install::InstalledGame, stor
 }
 
 #[tauri::command]
-async fn play(app: tauri::AppHandle, id: String, stores: Stores) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || play_mod(&app, &id, &stores, None)).await.map_err(|e| e.to_string())?
+async fn play(app: tauri::AppHandle, id: String, stores: Stores) -> Result<(), launch::PlayError> {
+    tauri::async_runtime::spawn_blocking(move || play_mod(&app, &id, &stores, None)).await.map_err(|e| launch::PlayError::from(e.to_string()))?
 }
 
 /// Where a join is, for the UI's one button: `lobby` -> `install` (with `install://progress`) -> `launch` -> `done`.
@@ -585,6 +644,7 @@ async fn join_lobby(
             return Err(join::JoinError::new(if status == 410 { "lobbyClosed" } else { "network" }, format!("recipe: HTTP {status}")));
         }
         let recipe = install::check::check_recipe(&recipe_json, false)?;
+        install::platform::require_here(&recipe)?;
         if recipe.id != info.mashup.id || recipe.version != info.mashup.version {
             return Err(join::JoinError::new("badLobby", "the lobby's recipe is not its pinned version"));
         }
@@ -618,7 +678,7 @@ async fn join_lobby(
     })
     .await
     .map_err(|e| join::JoinError::new("launch", e.to_string()))?
-    .map_err(|e| join::JoinError::new("launch", e))?;
+    .map_err(|e| join::JoinError::new(e.kind, e.to_string()))?;
     step("done");
     Ok(info)
 }
@@ -657,7 +717,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             scan_games, steam_lookup, launch, install, own_copies_find, own_copy_pick, restore, installed, fetch_text, play, join_lobby, lobby_api, lan_address,
-            take_links, minecraft_players, hosted_list, hosted_save, hosted_forget, privacy_get, privacy_set,
+            take_links, minecraft_players, hosted_list, hosted_save, hosted_forget, privacy_get, privacy_set, app_platform, bug_report,
             update::update_check, update::update_blocked, update::update_install
         ])
         .run(tauri::generate_context!())

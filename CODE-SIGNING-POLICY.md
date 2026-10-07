@@ -17,6 +17,10 @@ by the workflow below but are **not code-signed**, and this page describes the p
 - Every release needs a manual approval in SignPath by one of the approvers below before it is signed.
 - We do not sign third-party software. Mods and game files that the app downloads at run time are not signed by us and
   are not part of the signed installer.
+- SignPath signs the Windows files only. The macOS app (`SIGF-<version>-mac.dmg`) is built by the same workflow and
+  carries an ad-hoc signature, which names nobody; it is not signed with an Apple Developer ID or notarized yet. When
+  it is, it will be signed in the same workflow with the Developer ID of the organization that publishes SIGF, never
+  with a personal certificate.
 
 ## Team roles
 

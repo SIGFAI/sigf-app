@@ -1,10 +1,11 @@
 import type { Ctx } from '../App';
-import type { Mashup } from '../data/catalog';
+import { isCommunity, type Mashup } from '../data/catalog';
 import { GAME } from '../data/games';
 import { openUrl } from '../lib/api';
 import { Avatar, GameArt, Icon, MashupCover, fmtCount, shownDownloads } from '../ui';
 import { ActionButton, gameName } from './shared';
 import { PlayTogether } from './Lobbies';
+import { date, list, t, tx } from '../i18n';
 
 /** Taglines may carry `**bold**` from the catalog: render it, never show the asterisks. */
 function bold(text: string) {
@@ -20,54 +21,76 @@ export function Detail({ ctx, m, onClose }: { ctx: Ctx; m: Mashup; onClose: () =
   const notes = m.notes ?? [];
   const own = m.ownCopies ?? [];
   const builds = m.playerBuild ?? [];
+  // Mashups that change the same game files: never installed together (the core refuses the pair either way).
+  const conflicts = (m.conflicts ?? []).map((id) => ctx.catalog.find((c) => c.id === id)?.name ?? id.replace(/^sigf\//, ''));
+  const clash = installed ? null : ctx.conflictOf(m);
   // A community mashup (credited author, not SIGF or a launchpad agent): reviewed by SIGF before it is listed.
   const community = !m.by.agent && m.by.name !== 'SIGF';
+  // Submitted through sigf.ai/submit: "Community · by <GitHub owner>".
+  const submitted = isCommunity(m);
 
   return (
     <div className="scrim" onClick={onClose}>
       <aside className="detail" onClick={(e) => e.stopPropagation()}>
-        <button className="detail-close" onClick={onClose} aria-label="Close"><Icon name="x" size={16} /></button>
+        <button className="detail-close" onClick={onClose} aria-label={t('common.close')}><Icon name="x" size={16} /></button>
         <MashupCover host={m.host} guest={m.guest} cover={m.cover} className="detail-cover" />
         <div className="detail-body">
           <div className="card-pair">
             {m.subtitle ?? <>{gameName(m.host)} <b>×</b> {GAME[m.guest ?? '']?.short ?? m.guest}</>}
-            {m.kind === 'passthrough' && <span className="chip chip-prism">Real crossover</span>}
+            {m.kind === 'passthrough' && <span className="chip chip-prism">{t('card.crossover')}</span>}
           </div>
           <h1>{m.name}</h1>
           <p className="lede">{bold(m.tagline)}</p>
           <div className="byline">
             <span className="by-line">
               <Avatar src={m.avatar} size={18} />
-              by {author ? <a onClick={() => openUrl(author)}>{m.by.name}</a> : <b>{m.by.name}</b>}
+              {tx(submitted ? 'detail.byCommunity' : 'detail.by', { author: author ? <a onClick={() => openUrl(author)}>{m.by.name}</a> : <b>{m.by.name}</b> })}
             </span>
-            {repo && <a onClick={() => openUrl(repo)}>Source <Icon name="ext" size={11} /></a>}
-            {m.links?.issues && <a onClick={() => openUrl(m.links!.issues!)}>Report a bug <Icon name="ext" size={11} /></a>}
-            {m.status === 'beta' && <span className="chip">Beta</span>}
+            {repo && <a onClick={() => openUrl(repo)}>{t('detail.source')} <Icon name="ext" size={11} /></a>}
+            <a className="rp-link" onClick={() => ctx.report(m)}><Icon name="bug" size={12} /> {t('report.action')}</a>
+            {m.status === 'beta' && <span className="chip">{t('card.beta')}</span>}
           </div>
 
           <div className="detail-cta">
             <ActionButton ctx={ctx} m={m} big />
             {installed && (
               <button className="act act-ghost" onClick={() => ctx.restore(m)}>
-                <Icon name="restore" size={15} /> Restore vanilla
+                <Icon name="restore" size={15} /> {t('detail.restore')}
+              </button>
+            )}
+            {installed && (
+              <button className="act act-ghost" onClick={() => ctx.report(m)} title={t('detail.reportTitle')}>
+                <Icon name="bug" size={15} /> {t('report.action')}
               </button>
             )}
             <button
               className="act act-ghost"
-              title="Same pair, your twist: an agent builds your version"
+              title={t('detail.remixTitle')}
               onClick={() => {
                 ctx.setPair([m.host, m.guest && GAME[m.guest] ? m.guest : null]);
                 onClose();
                 ctx.go('build');
               }}
             >
-              <Icon name="build" size={15} /> Remix
+              <Icon name="build" size={15} /> {t('detail.remix')}
             </button>
           </div>
 
+          {clash && (
+            <div className="trust trust-warn">
+              <Icon name="restore" size={16} />
+              <span>
+                {t('detail.clash', { other: clash.name, name: m.name })}{' '}
+                <button className="act act-ghost" onClick={() => ctx.restoreThenGet(m, clash)}>
+                  {t('detail.restoreFirst', { other: clash.name })}
+                </button>
+              </span>
+            </div>
+          )}
+
           {howTo.length > 0 && (
             <>
-              <h4>How to play</h4>
+              <h4>{t('detail.howTo')}</h4>
               <ol className="notes howto">
                 {howTo.map((n, i) => <li key={i}>{n}</li>)}
               </ol>
@@ -76,16 +99,25 @@ export function Detail({ ctx, m, onClose }: { ctx: Ctx; m: Mashup; onClose: () =
 
           {notes.length > 0 && (
             <>
-              <h4>Before you play</h4>
+              <h4>{t('detail.before')}</h4>
               <ul className="notes">
                 {notes.map((n, i) => <li key={i} className={i === 0 && /^how it works:/i.test(n) ? 'notes-lead' : undefined}>{n}</li>)}
               </ul>
             </>
           )}
 
+          {conflicts.length > 0 && (
+            <>
+              <h4>{t('detail.notTogether')}</h4>
+              <ul className="notes">
+                <li>{t('detail.conflicts', { list: list(conflicts), count: conflicts.length })}</li>
+              </ul>
+            </>
+          )}
+
           <PlayTogether ctx={ctx} m={m} />
 
-          <h4>What you need</h4>
+          <h4>{t('detail.needs')}</h4>
           <div className="needs">
             {sides.map((id) => {
               const known = !!GAME[id];
@@ -99,18 +131,18 @@ export function Detail({ ctx, m, onClose }: { ctx: Ctx; m: Mashup; onClose: () =
                   <div>
                     <b>{GAME[id]?.name ?? id}</b>
                     {copy ? (
-                      <span>Your own copy of {copy.label}: found on your PC or picked when you click Get. SIGF never ships or downloads it.</span>
+                      <span>{t('detail.ownCopy', { label: copy.label })}</span>
                     ) : required ? (
                       have ? (
-                        <span><Icon name="check" size={13} /> On this PC{g?.build ? ` · build ${g.build}` : ''}</span>
+                        <span><Icon name="check" size={13} /> {t('detail.onPc')}{g?.build ? ` · ${t('lib.build', { build: g.build })}` : ''}</span>
                       ) : (
                         <span>
-                          Not found ·{' '}
-                          <a onClick={() => GAME[id]?.store && openUrl(GAME[id].store!)}>where to get it <Icon name="ext" size={11} /></a>
+                          {t('detail.notFound')} ·{' '}
+                          <a onClick={() => GAME[id]?.store && openUrl(GAME[id].store!)}>{t('detail.whereToGet')} <Icon name="ext" size={11} /></a>
                         </span>
                       )
                     ) : (
-                      <span>Not needed: its look and mechanics come inside the mod</span>
+                      <span>{t('detail.notNeeded')}</span>
                     )}
                   </div>
                 </div>
@@ -122,16 +154,16 @@ export function Detail({ ctx, m, onClose }: { ctx: Ctx; m: Mashup; onClose: () =
             <div className="trust">
               <Icon name="shield" size={16} />
               <span>
-                {own.map((c) => `Uses your own copy of ${c.label}. SIGF never ships or downloads it: the app checks your file on your PC and copies it into this mashup's folder. `).join('')}
-                {builds.map((b) => `The first install builds ${b.label} on your PC${b.minutes ? ` (about ${b.minutes} min)` : ''}, from pinned sources with a compiler SIGF downloads once from its official release. `).join('')}
-                Restore vanilla deletes these files.
+                {own.map((c) => `${t('detail.trustOwn', { label: c.label })} `).join('')}
+                {builds.map((b) => `${b.minutes ? t('detail.trustBuildMin', { label: b.label, count: b.minutes }) : t('detail.trustBuild', { label: b.label })} `).join('')}
+                {t('detail.trustRestore')}
               </span>
             </div>
           )}
 
           {m.steps.length > 0 && (
             <>
-              <h4>What the install does</h4>
+              <h4>{t('detail.steps')}</h4>
               <ol className="steps">
                 {m.steps.map((s) => <li key={s}>{s}</li>)}
               </ol>
@@ -139,27 +171,27 @@ export function Detail({ ctx, m, onClose }: { ctx: Ctx; m: Mashup; onClose: () =
           )}
 
           <div className="facts">
-            {m.strategy && <div><small>Method</small>{m.strategy}</div>}
-            {m.sizeMb > 0 && <div><small>Size</small>{m.sizeMb} MB</div>}
-            <div><small>Made by</small><span className="by-line"><Avatar src={m.avatar} size={20} />{m.links?.author ? <a onClick={() => openUrl(m.links!.author!)}>{m.by.name} <Icon name="ext" size={11} /></a> : m.by.name}{m.by.model ? ` · ${m.by.model}` : ''}</span></div>
-            {shownDownloads(m.downloads) && <div title="Downloads of this mashup's files from its SIGF GitHub releases"><small>Downloads</small>{fmtCount(m.downloads)}</div>}
-            {m.license && <div><small>License</small>{m.license}</div>}
-            {m.updated && <div><small>Updated</small>{m.updated.slice(0, 10)}</div>}
-            {m.repo && <div><small>Source</small><a onClick={() => openUrl(m.repo!)}>GitHub <Icon name="ext" size={11} /></a></div>}
-            {m.links?.releases && <div><small>Releases</small><a onClick={() => openUrl(m.links!.releases!)}>GitHub <Icon name="ext" size={11} /></a></div>}
-            {m.links?.issues && <div><small>Found a bug?</small><a onClick={() => openUrl(m.links!.issues!)}>Report it to {m.by.name} <Icon name="ext" size={11} /></a></div>}
+            {m.strategy && <div><small>{t('detail.method')}</small>{m.strategy}</div>}
+            {m.sizeMb > 0 && <div><small>{t('detail.size')}</small>{t('common.mb', { mb: m.sizeMb })}</div>}
+            <div><small>{t('detail.madeBy')}</small><span className="by-line"><Avatar src={m.avatar} size={20} />{m.links?.author ? <a onClick={() => openUrl(m.links!.author!)}>{m.by.name} <Icon name="ext" size={11} /></a> : m.by.name}{m.by.model ? ` · ${m.by.model}` : ''}</span></div>
+            {shownDownloads(m.downloads) && <div title={t('detail.downloadsTitle')}><small>{t('detail.downloads')}</small>{fmtCount(m.downloads)}</div>}
+            {m.license && <div><small>{t('detail.license')}</small>{m.license}</div>}
+            {m.updated && <div><small>{t('detail.updated')}</small>{date(m.updated)}</div>}
+            {m.repo && <div><small>{t('detail.source')}</small><a onClick={() => openUrl(m.repo!)}>GitHub <Icon name="ext" size={11} /></a></div>}
+            {m.links?.releases && <div><small>{t('detail.releases')}</small><a onClick={() => openUrl(m.links!.releases!)}>GitHub <Icon name="ext" size={11} /></a></div>}
+            <div><small>{t('detail.foundBug')}</small><a onClick={() => ctx.report(m)}>{t('detail.reportIt')}</a></div>
           </div>
 
           {m.status === 'beta' && (
             <div className="trust">
               <Icon name="shield" size={16} />
-              <span>Beta: a community mashup by {m.by.name}, packaged by SIGF with credit. Expect rough edges{m.links?.issues ? ', and report bugs with the Report a bug link above' : ''}.</span>
+              <span>{t(submitted ? 'detail.betaSubmitted' : 'detail.beta', { author: m.by.name })}</span>
             </div>
           )}
 
           <div className="trust">
             <Icon name="shield" size={16} />
-            <span>{community && 'Reviewed by SIGF before listing (source review and Defender scan). '}Every file is hash-checked against its published release, and the source is public. Your game files are snapshotted before anything changes; Restore vanilla puts them back. Never launched into a game's official online mode.</span>
+            <span>{community && `${t('detail.trustReviewed')} `}{t('detail.trust')}</span>
           </div>
         </div>
       </aside>

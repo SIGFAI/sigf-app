@@ -4,6 +4,7 @@ import { GAME } from '../data/games';
 import { GameArt, Icon } from '../ui';
 import { imageOk, usePrivacy } from '../lib/privacy';
 import { Card, Section, gameName, missing } from './shared';
+import { t, tx } from '../i18n';
 
 type Filter = 'playable' | 'all' | 'crossover';
 
@@ -17,15 +18,15 @@ function Slot({ ctx, slot }: { ctx: Ctx; slot: 0 | 1 }) {
         <>
           <GameArt id={id} name={g?.name ?? id} src={scanned?.art} wide={scanned?.artWide} local={scanned?.artLocal} wideLocal={scanned?.wideLocal} />
           <span className="slot-label">
-            <small>{slot === 0 ? 'Host' : 'Guest'}</small>
+            <small>{slot === 0 ? t('mix.host') : t('mix.guest')}</small>
             {g?.short ?? id}
           </span>
         </>
       ) : (
         <span className="slot-empty">
           <Icon name="plus" size={26} />
-          <small>{slot === 0 ? 'Host game' : 'Guest game'}</small>
-          <em>{slot === 0 ? 'the world you play in' : 'what crashes into it'}</em>
+          <small>{slot === 0 ? t('mix.hostGame') : t('mix.guestGame')}</small>
+          <em>{slot === 0 ? t('mix.hostHint') : t('mix.guestHint')}</em>
         </span>
       )}
     </button>
@@ -68,25 +69,23 @@ export function Home({ ctx, query }: { ctx: Ctx; query: string }) {
           {a && <GameArt id={a} name={a} src={bgA ? bgA.art : undefined} local={bgA ? bgA.heroLocal ?? bgA.artLocal : undefined} />}
         </div>
         <div className="board-copy">
-          <span className="eyebrow">Mix board</span>
+          <span className="eyebrow">{t('mix.eyebrow')}</span>
           <h1>
-            Two games you own.<br />
-            <span className="chrome">One new game.</span>
+            {t('mix.title1')}<br />
+            <span className="chrome">{t('mix.title2')}</span>
           </h1>
-          <p>
-            Pick a host and a guest. You get every mashup that already exists for the pair, ready in one click. If nobody made it yet, an agent builds it for you.
-          </p>
+          <p>{t('mix.lede')}</p>
           {!ctx.scan ? (
-            <div className="scanline">Looking for your games…</div>
+            <div className="scanline">{t('mix.scanning')}</div>
           ) : (
             <div className="scanline done">
-              <b>{ctx.scan.games.length}</b> games on this PC · <b>{playableCount}</b> mashups playable right now · scanned in {ctx.scan.millis} ms
+              {tx('mix.scanned', { games: <b>{ctx.scan.games.length}</b>, playable: <b>{playableCount}</b>, ms: ctx.scan.millis })}
             </div>
           )}
         </div>
         <div className="board-slots">
           <Slot ctx={ctx} slot={0} />
-          <button className="x" onClick={() => ctx.setPair([b, a])} title="Swap host and guest">
+          <button className="x" onClick={() => ctx.setPair([b, a])} title={t('mix.swap')}>
             <span>×</span>
             <Icon name="swap" size={14} />
           </button>
@@ -96,27 +95,27 @@ export function Home({ ctx, query }: { ctx: Ctx; query: string }) {
           <div className="board-result">
             {pairHits.length > 0 ? (
               <>
-                <span className="eyebrow">{pairHits.length} for {[a, b].filter(Boolean).map((x) => gameName(x!)).join(' × ')}</span>
+                <span className="eyebrow">{t('mix.pairHits', { count: pairHits.length, pair: [a, b].filter(Boolean).map((x) => gameName(x!)).join(' × ') })}</span>
                 <div className="pair-list">
                   {pairHits.map((m) => (
                     <button key={m.id} className="pair-hit" onClick={() => ctx.open(m)}>
                       <b>{m.name}</b>
-                      <span>{m.kind === 'passthrough' ? 'Real crossover' : 'Mashup'} · {m.by.name}</span>
+                      <span>{m.kind === 'passthrough' ? t('card.crossover') : t('mix.mashup')} · {m.by.name}</span>
                     </button>
                   ))}
                   {a && b && (
                     <button className="pair-hit pair-build" onClick={() => ctx.go('build')}>
-                      <b>Build your own take</b>
-                      <span>Agent · about 45 min</span>
+                      <b>{t('mix.buildOwn')}</b>
+                      <span>{t('mix.buildOwnSub')}</span>
                     </button>
                   )}
                 </div>
               </>
             ) : (
               <div className="pair-none">
-                <span>Nobody has made {[a, b].filter(Boolean).map((x) => gameName(x!)).join(' × ')} yet.</span>
+                <span>{t('mix.nobody', { pair: [a, b].filter(Boolean).map((x) => gameName(x!)).join(' × ') })}</span>
                 <button className="act act-get" onClick={() => ctx.go('build')}>
-                  <Icon name="build" size={15} /> Build it
+                  <Icon name="build" size={15} /> {t('mix.buildIt')}
                 </button>
               </div>
             )}
@@ -125,12 +124,12 @@ export function Home({ ctx, query }: { ctx: Ctx; query: string }) {
       </section>
 
       <Section
-        title={q ? `Results for “${query}”` : 'Mashups'}
-        sub={q ? undefined : filter === 'playable' ? 'You own every game these need. One click to play.' : undefined}
+        title={q ? t('mix.results', { query }) : t('mix.mashups')}
+        sub={q ? undefined : filter === 'playable' ? t('mix.playableSub') : undefined}
         aside={
           !q && (
             <div className="seg">
-              {([['playable', `Playable now · ${playableCount}`], ['crossover', 'Real crossovers'], ['all', 'Everything']] as const).map(([f, l]) => (
+              {([['playable', t('mix.filterPlayable', { count: playableCount })], ['crossover', t('mix.filterCrossover')], ['all', t('mix.filterAll')]] as const).map(([f, l]) => (
                 <button key={f} className={filter === f ? 'on' : ''} onClick={() => setFilter(f)}>{l}</button>
               ))}
             </div>
@@ -140,18 +139,18 @@ export function Home({ ctx, query }: { ctx: Ctx; query: string }) {
         {community.length ? (
           <div className="grid">{community.map((m, i) => <Card key={m.id} ctx={ctx} m={m} i={i} />)}</div>
         ) : (
-          <div className="empty">{byAi.length ? 'No community mashup here yet: see what our AI built below.' : 'Nothing here yet. Try “Everything”, or build it.'}</div>
+          <div className="empty">{byAi.length ? t('mix.emptyCommunity') : t('mix.empty')}</div>
         )}
       </Section>
 
       {byAi.length > 0 && (
-        <Section title="Built by SIGF AI" sub="Made live by our AI on the stream and the launchpad. Experimental, and open source like everything else.">
+        <Section title={t('mix.byAi')} sub={t('mix.byAiSub')}>
           <div className="grid grid-sm">{byAi.map((m, i) => <Card key={m.id} ctx={ctx} m={m} i={i} />)}</div>
         </Section>
       )}
 
       {live.length > 0 && !q && (
-        <Section title="Building right now" sub="Agents on the SIGF launchpad. Finished builds land here with an Install button." aside={<span className="live-pill"><Icon name="live" size={10} /> live from sigf.ai</span>}>
+        <Section title={t('mix.building')} sub={t('mix.buildingSub')} aside={<span className="live-pill"><Icon name="live" size={10} /> {t('mix.liveFrom')}</span>}>
           <div className="rail-row">
             {live.map((x) => (
               <a key={x.ticker} className="agent" href={`https://sigf.ai/agent/${x.ticker}`} target="_blank" rel="noreferrer">
@@ -159,7 +158,7 @@ export function Home({ ctx, query }: { ctx: Ctx; query: string }) {
                 <div>
                   <b>{x.name}</b>
                   <span>{gameName(x.host)} × {x.guest}</span>
-                  <em className={x.status === 'building' ? 'on' : ''}>{x.status === 'building' ? 'building' : x.status}</em>
+                  <em className={x.status === 'building' ? 'on' : ''}>{x.status === 'building' ? t('mix.statusBuilding') : x.status}</em>
                 </div>
               </a>
             ))}
@@ -168,7 +167,7 @@ export function Home({ ctx, query }: { ctx: Ctx; query: string }) {
       )}
 
       {oneAway.length > 0 && !q && (
-        <Section title="One game away" sub="You own all but one game for these.">
+        <Section title={t('mix.oneAway')} sub={t('mix.oneAwaySub')}>
           <div className="grid grid-sm">{oneAway.map((m, i) => <Card key={m.id} ctx={ctx} m={m} i={i} />)}</div>
         </Section>
       )}

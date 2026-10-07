@@ -6,6 +6,8 @@ import { useState } from 'react';
 import type { Mashup } from '../data/catalog';
 import { isInstallError, pickOwnCopy, type OwnFound } from '../lib/install';
 import { Icon, MashupCover } from '../ui';
+import { list, t } from '../i18n';
+import { installErrorText } from '../i18n/errors';
 
 export type OwnAsk = { m: Mashup; recipe: string; missing: OwnFound[]; resolve: (ok: boolean) => void };
 
@@ -28,8 +30,8 @@ export function OwnCopySheet({ ask, onDone }: { ask: OwnAsk; onDone: (ok: boolea
     } catch (e) {
       setError(
         isInstallError(e) && e.kind === 'ownCopyMismatch'
-          ? `This file is not the ${e.label} dump this mashup needs (SHA-1 ${e.sha1}). Pick a clean, unmodified dump: other regions, revisions and patched ROMs don't work.`
-          : isInstallError(e) ? e.message : String(e),
+          ? t('own.mismatch', { label: e.label, sha1: e.sha1 })
+          : installErrorText(e, { asSent: true }),
       );
     } finally {
       setBusy(false);
@@ -40,22 +42,23 @@ export function OwnCopySheet({ ask, onDone }: { ask: OwnAsk; onDone: (ok: boolea
     <div className="scrim scrim-center" onClick={() => onDone(false)}>
       <div className="join-sheet" onClick={(e) => e.stopPropagation()}>
         <MashupCover host={ask.m.host} guest={ask.m.guest} cover={ask.m.cover} className="join-cover" />
-        <button className="detail-close" onClick={() => onDone(false)} aria-label="Close"><Icon name="x" size={16} /></button>
+        <button className="detail-close" onClick={() => onDone(false)} aria-label={t('common.close')}><Icon name="x" size={16} /></button>
         <div className="join-body own-copy">
-          <span className="eyebrow">Your own copy</span>
-          <h2>{ask.m.name} needs {cur.label}</h2>
-          <p className="own-lede">Uses your own copy of {cur.label}. SIGF never ships or downloads it.</p>
+          <span className="eyebrow">{t('own.eyebrow')}</span>
+          <h2>{t('own.title', { name: ask.m.name, label: cur.label })}</h2>
+          <p className="own-lede">{t('own.lede', { label: cur.label })}</p>
           <ul className="notes">
             <li>
-              SIGF looked in your Downloads, Desktop, Documents and ROM folders
-              {cur.rejected.length ? <> and found {cur.rejected.slice(0, 3).join(', ')}{cur.rejected.length > 3 ? ` and ${cur.rejected.length - 3} more` : ''}, but not the dump this mashup needs.</> : <> and did not find it.</>}
+              {cur.rejected.length
+                ? t('own.found', { files: list(cur.rejected.length > 3 ? [...cur.rejected.slice(0, 3), t('own.moreFiles', { count: cur.rejected.length - 3 })] : cur.rejected) })
+                : t('own.notFound')}
             </li>
-            <li>Pick the file (a .zip holding it works too). It stays on your PC: SIGF checks it and copies it into this mashup's folder, and Restore vanilla deletes that copy. Nothing is uploaded.</li>
+            <li>{t('own.pick')}</li>
           </ul>
           {error && <div className="join-error"><span>{error}</span></div>}
           <div className="host-actions">
-            <button className="act act-ghost" onClick={() => onDone(false)}>Cancel</button>
-            <button className="act act-get" disabled={busy} onClick={() => void pick()}>{busy ? 'Checking…' : 'Choose file…'}</button>
+            <button className="act act-ghost" onClick={() => onDone(false)}>{t('common.cancel')}</button>
+            <button className="act act-get" disabled={busy} onClick={() => void pick()}>{busy ? t('own.checking') : t('own.choose')}</button>
           </div>
         </div>
       </div>

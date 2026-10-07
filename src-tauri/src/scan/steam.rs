@@ -8,6 +8,8 @@ const SKIP_APPS: &[&str] = &["228980", "1070560", "1391110", "1628350", "1493710
 /// Name endings of tools and extras, used only when appinfo.vdf can't tell the app type.
 const SKIP_SUFFIXES: &[&str] = &["editor", "dedicated server", "sdk", "tools", "soundtrack", "benchmark"];
 
+/// The Steam client's folder: the registry's `SteamPath` (else `C:\Program Files (x86)\Steam`) on Windows,
+/// `~/Library/Application Support/Steam` on macOS.
 pub fn steam_root() -> Option<PathBuf> {
     #[cfg(windows)]
     {
@@ -25,7 +27,12 @@ pub fn steam_root() -> Option<PathBuf> {
             }
         }
     }
+    #[cfg(windows)]
     let default = PathBuf::from("C:\\Program Files (x86)\\Steam");
+    #[cfg(target_os = "macos")]
+    let default = crate::install::user_data_dir()?.join("Steam");
+    #[cfg(not(any(windows, target_os = "macos")))]
+    let default = crate::install::user_home()?.join(".local").join("share").join("Steam");
     default.exists().then_some(default)
 }
 
@@ -56,7 +63,11 @@ fn libraries(root: &Path) -> Vec<PathBuf> {
 /// Steam's own art cache, served to the webview through the asset protocol.
 pub fn library_cache() -> Option<PathBuf> {
     let p = steam_root()?.join("appcache").join("librarycache");
-    p.is_dir().then(|| PathBuf::from(p.to_string_lossy().replace('/', "\\")))
+    if !p.is_dir() {
+        return None;
+    }
+    // Windows: one separator style, so the asset scope matches the paths the scan hands out.
+    Some(if cfg!(windows) { PathBuf::from(p.to_string_lossy().replace('/', "\\")) } else { p })
 }
 
 /// Newest `name` in `<appid>/`, `<appid>/<hash>/` (current layout) or `<appid>_name` (old flat layout).

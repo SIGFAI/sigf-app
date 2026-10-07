@@ -2,6 +2,7 @@ import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
 import { GAME, GAMES, art } from './data/games';
 import { localSrc, steamLookup, type SteamArt } from './lib/api';
 import { imageOk, usePrivacy } from './lib/privacy';
+import { getLocale, num } from './i18n';
 
 const hash = (s: string) => [...s].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7);
 
@@ -119,6 +120,10 @@ export function Icon({ name, size = 20 }: { name: string; size?: number }) {
     people: (<><circle cx="9" cy="8.5" r="3" /><path d="M3.5 19c.6-3.2 2.8-5 5.5-5s4.9 1.8 5.5 5" /><circle cx="16.5" cy="9.5" r="2.4" /><path d="M15.5 14.2c2.6-.3 4.5 1.4 5 4.3" /></>),
     link: (<><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1" /><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1" /></>),
     copy: (<><rect x="8" y="8" width="12" height="12" rx="2" /><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3" /></>),
+    back: <path d="M15 5l-7 7 7 7" />,
+    sound: (<><path d="M4 9.5h3.5L12 6v12l-4.5-3.5H4z" /><path d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11" /></>),
+    muted: (<><path d="M4 9.5h3.5L12 6v12l-4.5-3.5H4z" /><path d="M16 9.5l5 5M21 9.5l-5 5" /></>),
+    bug: (<><rect x="7.5" y="8" width="9" height="12" rx="4.5" /><path d="M12 12v8M9 5.5l1.5 2.5M15 5.5L13.5 8M4 13h3.5M16.5 13H20M5 8.5l2.8 1.6M19 8.5l-2.8 1.6M5 18.5l2.8-1.6M19 18.5l-2.8-1.6" /></>),
     ext: (<><path d="M14 4h6v6M20 4l-9 9" /><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" /></>),
   };
   return (
@@ -130,8 +135,11 @@ export function Icon({ name, size = 20 }: { name: string; size?: number }) {
 
 export const STORE_LABEL: Record<string, string> = { steam: 'Steam', epic: 'Epic', ubisoft: 'Ubisoft', gog: 'GOG', minecraft: 'Minecraft', ea: 'EA' };
 
-/** A compact count: 950, 1.2k, 12k, 3.4M (rounded down, so it never claims more than the real number). */
+const COMPACT = { notation: 'compact', maximumFractionDigits: 1, roundingMode: 'floor' } as Intl.NumberFormatOptions;
+/** A compact count: 950, 1.2k, 12k, 3.4M (rounded down, so it never claims more than the real number); other languages
+ *  use their own units (1.2万, 1,2 mil). */
 export function fmtCount(n: number) {
+  if (getLocale() !== 'en' && n >= 1000) return num(n, COMPACT);
   const short = (v: number, unit: string) => `${v >= 10 ? Math.floor(v) : Math.floor(v * 10) / 10}${unit}`;
   if (n >= 1e6) return short(n / 1e6, 'M');
   if (n >= 1000) return short(n / 1000, 'k');

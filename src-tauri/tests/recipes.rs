@@ -476,3 +476,79 @@ fn library_recipes_pass_the_app_url_rule_and_variants_fail() {
     }
     eprintln!("{checked} library recipes checked in {}", dir.display());
 }
+
+/// The doom fixture under another id and name, with the given `conflicts`.
+fn doom_as(id: &str, name: &str, conflicts: &[&str]) -> Recipe {
+    let dir = fixtures().join("doom");
+    let mut v: Value = serde_json::from_str(&std::fs::read_to_string(dir.join("mashup.json")).unwrap()).unwrap();
+    repoint(&mut v, &dir);
+    v["id"] = Value::from(id);
+    v["name"] = Value::from(name);
+    if !conflicts.is_empty() {
+        v["conflicts"] = Value::from(conflicts.to_vec());
+    }
+    Recipe::parse(&v.to_string()).unwrap()
+}
+
+/// `conflicts` blocks both ways: the new recipe names the installed one, or the installed one named the new recipe
+/// (kept in installed.json). Nothing is downloaded or written before the refusal; after a restore it installs.
+#[test]
+fn conflicting_mashups_are_never_installed_together_either_way() {
+    let e = env(false);
+    let none: HashMap<String, String> = HashMap::new();
+    let old = doom_as("sigf/old-craft", "Old Craft", &[]);
+    let new = doom_as("sigf/new-craft", "New Craft", &["sigf/old-craft"]);
+    let other = doom_as("sigf/other", "Other", &[]);
+
+    // The published one first, then the new one that names it.
+    install(&e, &old, &[]);
+    let err = e.engine.install(&new, &none, &mut |_| {}).unwrap_err();
+    match &err {
+        InstallError::Conflict { id, name, with, with_name } => {
+            assert_eq!((id.as_str(), name.as_str(), with.as_str(), with_name.as_str()), ("sigf/new-craft", "New Craft", "sigf/old-craft", "Old Craft"));
+        }
+        other => panic!("expected a conflict, got {other:?}"),
+    }
+    assert!(err.to_string().contains("Restore Old Craft first"), "{err}");
+    let json = serde_json::to_value(&err).unwrap();
+    assert_eq!(json["kind"], "conflict");
+    assert_eq!(json["withName"], "Old Craft");
+    assert!(!e.engine.home.join("profiles").join("sigf-new-craft").exists(), "nothing written");
+    assert_eq!(e.engine.installed().len(), 1);
+    // A mashup that names neither installs next to it; re-installing the same id is not a conflict.
+    e.engine.install(&other, &none, &mut |_| {}).unwrap();
+    e.engine.install(&old, &none, &mut |_| {}).unwrap();
+    e.engine.restore("sigf/other", false).unwrap();
+    restored(&e, "sigf/old-craft");
+
+    // The other way round: the new one installed first records what it names; the old recipe (naming nothing) is refused.
+    let m = install(&e, &new, &[]);
+    assert_eq!(m.conflicts, vec!["sigf/old-craft".to_string()]);
+    assert_eq!(e.engine.installed()[0].conflicts, vec!["sigf/old-craft".to_string()], "kept in installed.json");
+    match e.engine.install(&old, &none, &mut |_| {}).unwrap_err() {
+        InstallError::Conflict { with, .. } => assert_eq!(with, "sigf/new-craft"),
+        other => panic!("expected a conflict, got {other:?}"),
+    }
+    assert_eq!(e.engine.conflict(&old).map(|m| m.id), Some("sigf/new-craft".to_string()));
+    restored(&e, "sigf/new-craft");
+    install(&e, &old, &[]);
+    restored(&e, "sigf/old-craft");
+}
+
+/// installed.json written before `conflicts` existed still loads, and a mod without conflicts writes no field.
+#[test]
+fn registry_without_conflicts_still_loads() {
+    let e = env(false);
+    std::fs::create_dir_all(&e.engine.home).unwrap();
+    std::fs::write(
+        e.engine.home.join("installed.json"),
+        r#"[{"id":"sigf/old-craft","version":"1.0.0","name":"Old Craft","installedAt":1,"games":[]}]"#,
+    )
+    .unwrap();
+    let list = e.engine.installed();
+    assert_eq!(list.len(), 1);
+    assert!(list[0].conflicts.is_empty());
+    assert!(!serde_json::to_string(&list[0]).unwrap().contains("conflicts"));
+    let new = doom_as("sigf/new-craft", "New Craft", &["sigf/old-craft"]);
+    assert!(matches!(e.engine.install(&new, &HashMap::new(), &mut |_| {}), Err(InstallError::Conflict { .. })));
+}

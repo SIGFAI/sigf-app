@@ -14,7 +14,7 @@ export type CanonGame = {
   /** Tile colors for games with no public art. */
   hue?: number;
   /** Steam art at a non-standard path (newer apps serve it under hashed CDN folders, old ones as portrait.png). */
-  steamArt?: { tall?: string; hero?: string };
+  steamArt?: { tall?: string; hero?: string; wide?: string };
 };
 
 /** Games with fal-generated look-alike key art in public/art (no logos, no text, no real characters; library/QC.md). */
@@ -82,6 +82,23 @@ export const GAMES: CanonGame[] = [
   { id: 'valheim', name: 'Valheim', short: 'Valheim', steam: ['892970'], store: 'https://store.steampowered.com/app/892970' },
   { id: 'saintsrow3', name: 'Saints Row: The Third Remastered', short: 'Saints Row 3', steam: ['978300'], store: 'https://store.steampowered.com/app/978300' },
   { id: 'hytale', name: 'Hytale', short: 'Hytale', store: 'https://hytale.com', hue: 30 },
+  // GitHub sweep (2026-10-07) and bring-your-own-ROM mashups.
+  { id: 'halomcc', name: 'Halo: The Master Chief Collection', short: 'Halo MCC', steam: ['976730'], store: 'https://store.steampowered.com/app/976730' },
+  { id: 'halflife2', name: 'Half-Life 2', short: 'Half-Life 2', steam: ['220'], store: 'https://store.steampowered.com/app/220' },
+  { id: 'dyinglight', name: 'Dying Light', short: 'Dying Light', steam: ['239140'], store: 'https://store.steampowered.com/app/239140' },
+  { id: 'schedule1', name: 'Schedule I', short: 'Schedule I', steam: ['3164500'], store: 'https://store.steampowered.com/app/3164500' },
+  // The full game and its free demo (the demo is what cu-hornet runs on).
+  { id: 'casualtiesunknown', name: 'Casualties: Unknown', short: 'Casualties', steam: ['4576490', '4576510'], steamArt: {
+    tall: 'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/4576490/2876bd25f1c82af501ba6e1befa7c8cc5178ce07/library_capsule.jpg',
+    hero: 'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/4576490/ff891c3749212e837fd707579c8bc9dc0a58f221/library_hero.jpg',
+    wide: 'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/4576490/907888dce73f50c48410b5ab92971a0d95776b29/header.jpg',
+  }, store: 'https://store.steampowered.com/app/4576490' },
+  { id: 'silksong', name: 'Hollow Knight: Silksong', short: 'Silksong', steam: ['1030300'], store: 'https://store.steampowered.com/app/1030300' },
+  { id: 'bo2', name: 'Call of Duty: Black Ops II', short: 'Black Ops II', steam: ['202970'], store: 'https://store.steampowered.com/app/202970' },
+  { id: 'subnautica', name: 'Subnautica', short: 'Subnautica', steam: ['264710'], store: 'https://store.steampowered.com/app/264710' },
+  { id: 'crashtrilogy', name: 'Crash Bandicoot N. Sane Trilogy', short: 'Crash Trilogy', steam: ['731490'], store: 'https://store.steampowered.com/app/731490' },
+  // The player's own ROM (own_copies): never scanned, never sold here, so no store link.
+  { id: 'sm64', name: 'Super Mario 64', short: 'Mario 64', hue: 0 },
 ];
 
 export const GAME = Object.fromEntries(GAMES.map((g) => [g.id, g])) as Record<string, CanonGame>;
@@ -92,7 +109,7 @@ export type GameArtSet = { tall?: string; wide?: string; hero?: string; gen?: { 
 export function art(id: string): GameArtSet {
   const g = GAME[id];
   const s = g?.steam?.[0];
-  const out: GameArtSet = s ? { tall: g.steamArt?.tall ?? steamArt(s), wide: steamWide(s), hero: g.steamArt?.hero ?? steamHero(s) } : {};
+  const out: GameArtSet = s ? { tall: g.steamArt?.tall ?? steamArt(s), wide: g.steamArt?.wide ?? steamWide(s), hero: g.steamArt?.hero ?? steamHero(s) } : {};
   if (GENERATED.has(id)) out.gen = { tall: `/art/${id}-tall.webp`, hero: `/art/${id}-hero.webp` };
   return out;
 }

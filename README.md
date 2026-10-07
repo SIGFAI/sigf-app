@@ -1,6 +1,6 @@
 # SIGF
 
-SIGF is a Windows desktop app that installs game mashups in one click: community mods and SIGF's own mashups that join
+SIGF is a desktop app for Windows and macOS that installs game mashups in one click: community mods and SIGF's own mashups that join
 two games together. It finds the games you already own, installs the files a mashup needs into the right folders, and
 can put every game back the way it was with **Restore vanilla**.
 
@@ -22,8 +22,12 @@ SIGF is not affiliated with any game publisher or store. Game names and art belo
 - Find your installed games by reading only these files and keys:
   - Steam: `libraryfolders.vdf`, `appmanifest_*.acf`, `appinfo.vdf` and Steam's own art cache;
   - Epic Games: the install manifests and the catalog cache;
-  - GOG and Ubisoft: their install registry keys;
+  - GOG and Ubisoft: their install registry keys (on macOS, each GOG game's own `goggame-*.info` file; Ubisoft has
+    no Mac client);
   - Prism Launcher, the Modrinth App and `.minecraft`: folder names.
+
+  On macOS the same files are read from their Mac folders (`~/Library/Application Support/Steam`, `.../Epic`,
+  `.../PrismLauncher`, `/Applications`).
 - Check every file it downloads against a SHA-256 hash (SHA-512 or SHA-1 for Minecraft pack entries from Modrinth)
   before it uses it. A mismatch stops the install.
 - Download mod files only from the GitHub release of the mashup's own repository (or the one pinned upstream release a
@@ -57,6 +61,9 @@ SIGF is not affiliated with any game publisher or store. Game names and art belo
 - **Restore cannot undo everything:** files the game or the mod creates while you play (configs, logs, saves), a
   Restore you force after the game was updated, or a Minecraft instance created through Prism's import fallback.
 - **Uninstalling SIGF does not restore your games.** Use Restore vanilla on each installed mashup first.
+- **On a Mac, fewer mashups.** Most mashups load Windows code into Windows games (DLL and ASI plugins, BepInEx,
+  script extenders). A Mac lists only the mashups whose recipe runs there, today the Minecraft packs played through
+  Prism Launcher (`platforms` in [docs/RECIPE-FORMAT.md](docs/RECIPE-FORMAT.md)).
 
 ## Privacy: exactly what is sent
 
@@ -77,15 +84,16 @@ section, is [docs/PRIVACY.md](docs/PRIVACY.md) (also at [sigf.ai/privacy](https:
 | Hosting a lobby | `sigf.ai` | Your display name, the lobby mode, the player limit, the join address, and the player count (every 30 seconds). **Your PC's local network (LAN) address goes into the join address only when you click "Use my LAN address"**, or by itself if you chose "Fill in for me" (the default is "Ask each time"). Anyone with the invite link can see the address; a public lobby list never shows it. sigf.ai keeps a salted hash of your IP address with the lobby to limit abuse. | Do not host |
 | "Host on SIGF (free)", if you choose it (when sigf.ai offers it) | `sigf.ai` | The lobby and the region you pick. Your world runs on SIGF's server for up to 8 hours and is kept for 7 days so you can download it. | Do not use it |
 | Hosting a Minecraft lobby | Your own Minecraft server | A status check (Minecraft Server List Ping) every 30 seconds to count players. | Do not host |
-| First install on a PC without WebView2 | Microsoft | The installer downloads Microsoft's WebView2 runtime. | No |
+| First install on a Windows PC without WebView2 | Microsoft | The installer downloads Microsoft's WebView2 runtime. The Mac app uses macOS's own web view. | No |
 
 **Your choices.** The installer's first page shows the privacy text with a link to the full policy, and at the end of
 the installation it asks "Allow SIGF's optional online requests?" (No turns them all off). On its first start, before
 anything but the catalog request goes out, the app shows each choice: "Game pictures", "Find missing pictures on
 Steam", "Lobbies for the games I own" and "My local network address when I host" (Ask each time or Fill in for me),
 with the installer's answer filled in; nothing else happens until you click Continue. You can change them any time under **Privacy**, at the bottom of the app's left
-bar. The choices are saved in `%LOCALAPPDATA%\SIGF\privacy.json`, and the app's Rust core enforces them for its own
-requests.
+bar. The choices are saved in `%LOCALAPPDATA%\SIGF\privacy.json` (on macOS
+`~/Library/Application Support/SIGF/privacy.json`, and there is no installer step: the app asks on its first start),
+and the app's Rust core enforces them for its own requests.
 
 **What sigf.ai keeps.** For a lobby: the mashup and version, your display name, the lobby settings, the join address, a
 hash of the host's secret and an HMAC-SHA256 of your IP address under a secret server-side salt, used only to limit how
@@ -99,7 +107,9 @@ which carries every request to the site and keeps its own logs under Cloudflare'
 list of installed mashups, the picture search cache, your privacy choices, the secrets of your hosted lobbies' worlds
 (for 7 days) and your host display name, in
 `%LOCALAPPDATA%\SIGF` and the app's WebView2 profile. The program itself is installed in
-`%LOCALAPPDATA%\Programs\SIGF`; uninstalling it keeps `%LOCALAPPDATA%\SIGF`.
+`%LOCALAPPDATA%\Programs\SIGF`; uninstalling it keeps `%LOCALAPPDATA%\SIGF`. On macOS the data is in
+`~/Library/Application Support/SIGF` (and the window's web data in `~/Library/WebKit/ai.sigf.app`), the program is
+`SIGF.app`, and moving it to the Trash keeps the data folder.
 
 **Privacy requests**, or anything about your own data: open a private report through
 [GitHub Security Advisories](https://github.com/SIGFAI/sigf-app/security/advisories/new). Only the maintainers can read
@@ -118,15 +128,29 @@ gh attestation verify SIGF_0.1.0_x64-setup.exe --repo SIGFAI/sigf-app
 Get-FileHash -Algorithm SHA256 .\SIGF_0.1.0_x64-setup.exe
 ```
 
+On a Mac:
+
+```bash
+gh attestation verify SIGF-0.1.0-mac.dmg --repo SIGFAI/sigf-app
+shasum -a 256 SIGF-0.1.0-mac.dmg
+```
+
 Replace `0.1.0` with the version you downloaded. Step 1 needs the [GitHub CLI](https://cli.github.com/). It proves where
 and how the file was built, not that the code is bug-free.
 
 Releases are not code-signed yet: Windows SmartScreen may warn before the first run. Signing through SignPath
 Foundation is planned; see the [code signing policy](CODE-SIGNING-POLICY.md).
 
+The Mac app is not signed with an Apple Developer ID or notarized yet (it carries an ad-hoc signature, which names
+nobody). The first time you open it, macOS blocks it: click **Done**, open **System Settings > Privacy & Security**,
+click **Open Anyway** next to "SIGF" was blocked, and confirm. You do this once; later starts and updates open
+normally.
+
 ## Build from source
 
-Windows 10 or 11, x64.
+The app builds on Windows 10 or 11 (x64) and on macOS 11 or later (Apple Silicon or Intel).
+
+### Windows
 
 Prerequisites:
 
@@ -155,7 +179,34 @@ npm run tauri build
 ```
 
 The installer is written to `src-tauri/target/release/bundle/nsis/SIGF_<version>_x64-setup.exe` and the app to
-`src-tauri/target/release/sigf-app.exe`.
+`src-tauri/target/release/SIGF.exe`.
+
+### macOS
+
+Prerequisites: Xcode Command Line Tools (`xcode-select --install`), [Rust](https://rustup.rs/) (version in
+`rust-toolchain.toml`) and [Node.js](https://nodejs.org/) 22 with npm.
+
+```bash
+git clone https://github.com/SIGFAI/sigf-app
+cd sigf-app
+npm ci
+npm run tauri dev                  # development
+
+npm run build                      # tests need dist/
+cargo test --locked --manifest-path src-tauri/Cargo.toml
+
+# Release build for this Mac's architecture: SIGF.app and a .dmg
+npm run tauri build -- --bundles app,dmg --config '{"bundle":{"createUpdaterArtifacts":false}}'
+
+# One universal app (Apple Silicon + Intel), as the release workflow builds it
+rustup target add aarch64-apple-darwin x86_64-apple-darwin
+npm run tauri build -- --target universal-apple-darwin --bundles app,dmg --config '{"bundle":{"createUpdaterArtifacts":false}}'
+```
+
+The app is written to `src-tauri/target/[universal-apple-darwin/]release/bundle/macos/SIGF.app` and the disk image to
+`.../bundle/dmg/`. A local build is ad-hoc signed (`bundle.macOS.signingIdentity: "-"`), which is enough to run it on
+the Mac that built it. `createUpdaterArtifacts` is turned off because the updater archive needs the release signing
+key.
 
 The app is built with [Tauri 2](https://tauri.app/) (Rust core, React + TypeScript UI built with Vite).
 

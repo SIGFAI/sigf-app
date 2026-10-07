@@ -2,7 +2,8 @@
 // in step with docs/PRIVACY.md and src-tauri/windows/privacy.txt (the installer's first page).
 import { useState, type ReactNode } from 'react';
 import { openUrl } from '../lib/api';
-import { savePrivacy, type Privacy } from '../lib/privacy';
+import { getPrivacy, savePrivacy, type Privacy } from '../lib/privacy';
+import { LOCALES, LOCALE_NAMES, getLocale, setLocale, t, tIn, tx, type Locale } from '../i18n';
 import { Icon } from '../ui';
 
 export const POLICY_URL = 'https://sigf.ai/privacy';
@@ -24,17 +25,27 @@ function Toggle({ on, onChange, disabled, title, children }: { on: boolean; onCh
  * The choices and what they mean. `first`: the first-start screen (nothing but the catalog request has gone out yet;
  * "Continue" saves and lets the app start its other requests). Otherwise the Privacy sheet, saved on "Save".
  */
-export function PrivacyPanel({ initial, first = false, onDone, onClose }: { initial: Privacy; first?: boolean; onDone: (p: Privacy) => void; onClose?: () => void }) {
-  const [p, setP] = useState<Privacy>(initial);
+export function PrivacyPanel({ initial, first = false, onDone, onClose, onReport }: { initial: Privacy; first?: boolean; onDone: (p: Privacy) => void; onClose?: () => void; onReport?: () => void }) {
+  // The language is not part of this sheet's choices: it is saved on its own, at once.
+  const [p, setP] = useState<Omit<Privacy, 'language'>>(() => {
+    const { language: _, ...choices } = initial;
+    return choices;
+  });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const set = (k: Partial<Privacy>) => setP((x) => ({ ...x, ...k }));
+  const set = (k: Partial<Omit<Privacy, 'language'>>) => setP((x) => ({ ...x, ...k }));
+
+  // The language applies at once and is saved at once (with the choices in force, not this sheet's unsaved ones).
+  const pickLanguage = (language: Locale) => {
+    setLocale(language);
+    void savePrivacy({ ...(getPrivacy() ?? initial), language }).catch(() => {});
+  };
 
   const done = async () => {
     setBusy(true);
     setError(null);
     try {
-      onDone(await savePrivacy({ ...p, artSearch: p.storeArt && p.artSearch, asked: true }));
+      onDone(await savePrivacy({ ...p, language: (getPrivacy() ?? initial).language, artSearch: p.storeArt && p.artSearch, asked: true }));
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
@@ -44,56 +55,66 @@ export function PrivacyPanel({ initial, first = false, onDone, onClose }: { init
   return (
     <div className="scrim scrim-center pv-scrim" onClick={first ? undefined : onClose}>
       <div className="join-sheet pv-sheet" onClick={(e) => e.stopPropagation()} role="dialog" aria-labelledby="pv-title">
-        {!first && onClose && <button className="detail-close" onClick={onClose} aria-label="Close"><Icon name="x" size={16} /></button>}
+        {!first && onClose && <button className="detail-close" onClick={onClose} aria-label={t('common.close')}><Icon name="x" size={16} /></button>}
         <div className="pv-body">
-          <span className="eyebrow"><Icon name="shield" size={12} /> Privacy</span>
-          <h2 id="pv-title">{first ? 'Before SIGF goes online' : 'What SIGF sends, and to whom'}</h2>
+          <span className="eyebrow"><Icon name="shield" size={12} /> {t('privacy.eyebrow')}</span>
+          <h2 id="pv-title">{first ? t('privacy.titleFirst') : t('privacy.titleSheet')}</h2>
           <p className="muted pv-lead">
-            SIGF has no account, no ads, no telemetry, no analytics and no crash reports. It never reads your store logins or passwords.
-            {first ? ' So far it has only asked sigf.ai for the mashup catalog. Choose what else it may do:' : ' You choose what it may do by itself:'}
+            {t('privacy.lead')} {first ? t('privacy.leadFirst') : t('privacy.leadSheet')}
           </p>
 
-          <Toggle title="Game pictures" on={p.storeArt} onChange={(v) => set({ storeArt: v })}>
-            Loads game, mashup and creator pictures from Steam, Epic Games and Modrinth image servers. They can tell which games are on your screen.
-            Off: plain colored tiles (pictures already in Steam's cache on your PC still show).
+          <label className="pv-row pv-row-seg pv-lang">
+            <span>
+              <b>{t('privacy.language')}{getLocale() === 'en' ? '' : ` · ${tIn('en', 'privacy.language')}`}</b>
+            </span>
+            <select value={getLocale()} onChange={(e) => pickLanguage(e.target.value as Locale)}>
+              {LOCALES.map((l) => <option key={l} value={l} lang={l}>{LOCALE_NAMES[l]}</option>)}
+            </select>
+          </label>
+
+          <Toggle title={t('privacy.art')} on={p.storeArt} onChange={(v) => set({ storeArt: v })}>
+            {t('privacy.artBody')} {t('privacy.artOff')}
           </Toggle>
-          <Toggle title="Find missing pictures on Steam" on={p.artSearch} disabled={!p.storeArt} onChange={(v) => set({ artSearch: v })}>
-            For a game with no picture (some Ubisoft, GOG and Epic games), sends the game's name to the Steam store search.
+          <Toggle title={t('privacy.search')} on={p.artSearch} disabled={!p.storeArt} onChange={(v) => set({ artSearch: v })}>
+            {t('privacy.searchBody')}
           </Toggle>
-          <Toggle title="Lobbies for the games I own" on={p.lobbyGames} onChange={(v) => set({ lobbyGames: v })}>
-            When the Lobbies tab or Play with friends is open, sends sigf.ai the games you own that SIGF has mashups for, so it lists only lobbies you can join.
-            Off: SIGF gets every public lobby and picks yours on your PC.
+          <Toggle title={t('privacy.lobbies')} on={p.lobbyGames} onChange={(v) => set({ lobbyGames: v })}>
+            {t('privacy.lobbiesBody')} {t('privacy.lobbiesOff')}
           </Toggle>
           <div className="pv-row pv-row-seg">
             <span>
-              <b>My local network address when I host</b>
-              <small>A lobby you host carries a join address. Anyone with the invite link can see it.</small>
+              <b>{t('privacy.lan')}</b>
+              <small>{t('privacy.lanBody')}</small>
             </span>
             <div className="seg">
-              <button type="button" className={p.lanAddress === 'ask' ? 'on' : ''} onClick={() => set({ lanAddress: 'ask' })}>Ask each time</button>
-              <button type="button" className={p.lanAddress === 'auto' ? 'on' : ''} onClick={() => set({ lanAddress: 'auto' })}>Fill in for me</button>
+              <button type="button" className={p.lanAddress === 'ask' ? 'on' : ''} onClick={() => set({ lanAddress: 'ask' })}>{t('privacy.lanAsk')}</button>
+              <button type="button" className={p.lanAddress === 'auto' ? 'on' : ''} onClick={() => set({ lanAddress: 'auto' })}>{t('privacy.lanAuto')}</button>
             </div>
           </div>
 
           <details className="pv-always">
-            <summary>Always, when you use a feature</summary>
+            <summary>{t('privacy.always')}</summary>
             <ul>
-              <li><b>sigf.ai</b>: the mashup catalog and the studio list when the app starts, a mashup's recipe when you install it, and the lobby you host or join (your display name, the lobby settings, the join address). sigf.ai keeps a salted hash of your IP address with a lobby to limit abuse.</li>
-              <li><b>GitHub</b>: a check for a newer version of SIGF when the app starts and every 6 hours, with nothing sent beyond a normal request. An update downloads only when you click Update and restart.</li>
-              <li><b>GitHub and Modrinth</b>: file downloads when you install a mashup or join a lobby. A mashup that builds a file on your PC also downloads pinned sources from GitHub and, the first time, a compiler from GitHub and Python from python.org.</li>
-              <li><b>Nobody</b>: your own copy of a game file (a ROM you dumped), for a mashup that uses one, stays on your PC. SIGF checks it and copies it into that mashup's folder; it is never uploaded.</li>
-              <li><b>Your own game server</b>: a status check every 30 seconds while you host a Minecraft lobby.</li>
-              <li><b>Never</b>: telemetry, analytics, crash reports, accounts, store logins or tokens.</li>
+              <li>{tx('privacy.alwaysSite', { who: <b>sigf.ai</b> })}</li>
+              <li>{tx('privacy.alwaysUpdate', { who: <b>GitHub</b> })}</li>
+              <li>{tx('privacy.alwaysDownloads', { who: <b>{t('privacy.whoDownloads')}</b> })}</li>
+              <li>{tx('privacy.alwaysOwnCopy', { who: <b>{t('privacy.whoNobody')}</b> })}</li>
+              <li>{tx('privacy.alwaysReport', { who: <b>{t('privacy.whoReport')}</b> })}</li>
+              <li>{tx('privacy.alwaysServer', { who: <b>{t('privacy.whoServer')}</b> })}</li>
+              <li>{tx('privacy.alwaysNever', { who: <b>{t('privacy.whoNever')}</b> })}</li>
             </ul>
           </details>
 
           {error && <div className="join-error"><span>{error}</span></div>}
           <div className="host-actions pv-actions">
-            <a className="pv-link" onClick={() => void openUrl(POLICY_URL)}>Full privacy policy <Icon name="ext" size={11} /></a>
-            {!first && onClose && <button className="act act-ghost" onClick={onClose}>Cancel</button>}
-            <button className="act act-get" onClick={() => void done()} disabled={busy} autoFocus>{first ? 'Continue' : 'Save'}</button>
+            <a className="pv-link" onClick={() => void openUrl(POLICY_URL)}>{t('privacy.policy')} <Icon name="ext" size={11} /></a>
+            {!first && onClose && <button className="act act-ghost" onClick={onClose}>{t('common.cancel')}</button>}
+            <button className="act act-get" onClick={() => void done()} disabled={busy} autoFocus>{first ? t('privacy.continue') : t('privacy.save')}</button>
           </div>
-          <p className="muted pv-foot">You can change these any time: Privacy, at the bottom of the left bar.</p>
+          <p className="muted pv-foot">
+            {t('privacy.foot')}
+            {onReport && <> {t('privacy.footBug')} <a className="rp-link" onClick={onReport}><Icon name="bug" size={11} /> {t('privacy.reportApp')}</a></>}
+          </p>
         </div>
       </div>
     </div>

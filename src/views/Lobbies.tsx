@@ -4,27 +4,18 @@ import { useEffect, useState } from 'react';
 import type { Ctx } from '../App';
 import type { Mashup } from '../data/catalog';
 import { GAME } from '../data/games';
-import { inTauri, openUrl } from '../lib/api';
+import { appPlatform, copyText, inTauri, openUrl, platformName, prismDownload } from '../lib/api';
 import { CONNECT_GAMES, DEFAULT_PORT, SERVER_ACTIVE, lanAddress, listLobbies, nearestRegion, parseInvite, validAddress, type HostedServer, type Lobby, type PublicLobby, type Target } from '../lib/lobbies';
 import { Icon, MashupCover } from '../ui';
 import { usePrivacy } from '../lib/privacy';
 import { Section, gameName } from './shared';
+import { day, list, t, tx, type Key } from '../i18n';
 
 const missingOf = (ctx: Ctx, games: string[]) => games.filter((g) => !ctx.owned.has(g));
 
-/** Copies to the clipboard; true when it worked. */
-async function copy(text: string) {
-  try {
-    await navigator.clipboard.writeText(text);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 function Players({ n, max, state }: { n: number; max: number; state: PublicLobby['state'] }) {
   return (
-    <span className={`players players-${state}`} title={`${n} of ${max} players`}>
+    <span className={`players players-${state}`} title={t('lobby.playersOf', { count: n, max })}>
       <i style={{ ['--p' as string]: `${Math.min(100, (n / Math.max(1, max)) * 100)}%` }} />
       <b>{n}</b>/{max}
     </span>
@@ -35,22 +26,27 @@ function LobbyRow({ ctx, l, i }: { ctx: Ctx; l: PublicLobby; i: number }) {
   const miss = missingOf(ctx, l.games);
   const [host, guest] = [l.games[0], l.games[1]];
   const known = ctx.catalog.find((m) => m.id === l.mashup.id);
+  // A mashup that does not run on this system (a Windows-only one on a Mac): shown, but it cannot be joined here.
+  const only = ctx.elsewhere.get(l.mashup.id);
+  const platforms = list((only ?? []).map(platformName));
   return (
     <div className="lobby" style={{ ['--i' as string]: i }}>
       <MashupCover host={known?.host ?? host} guest={known?.guest ?? guest} className="qcover" />
       <div className="qinfo">
         <b>{l.mashup.name}</b>
         <span>
-          hosted by {l.host} · {l.games.map(gameName).join(' + ')} · v{l.mashup.version}
+          {t('lobby.hostedBy', { host: l.host })} · {l.games.map(gameName).join(' + ')} · v{l.mashup.version}
         </span>
       </div>
       <Players n={l.players} max={l.maxPlayers} state={l.state} />
-      {miss.length ? (
-        <button className="act act-miss" onClick={() => known && ctx.open(known)}>Needs {miss.map(gameName).join(' + ')}</button>
+      {only ? (
+        <button className="act act-busy" disabled title={t('lobby.onlyTitle', { platforms })}>{t('lobby.only', { platforms })}</button>
+      ) : miss.length ? (
+        <button className="act act-miss" onClick={() => known && ctx.open(known)}>{t('card.needs', { games: miss.map(gameName).join(' + ') })}</button>
       ) : l.state === 'open' ? (
-        <button className="act act-get" onClick={() => ctx.join(l.id, true)}>Join</button>
+        <button className="act act-get" onClick={() => ctx.join(l.id, true)}>{t('lobby.join')}</button>
       ) : (
-        <button className="act act-busy" disabled>{l.state === 'full' ? 'Full' : 'Starting'}</button>
+        <button className="act act-busy" disabled>{l.state === 'full' ? t('lobby.full') : t('lobby.starting')}</button>
       )}
     </div>
   );
@@ -79,19 +75,19 @@ function useLobbies(ctx: Ctx, mashup?: string) {
 }
 
 export function Lobbies({ ctx }: { ctx: Ctx }) {
-  const { list, error } = useLobbies(ctx);
+  const { list: lobbies, error } = useLobbies(ctx);
   const [link, setLink] = useState('');
   const id = parseInvite(link);
-  const players = (list ?? []).reduce((s, l) => s + l.players, 0);
+  const players = (lobbies ?? []).reduce((s, l) => s + l.players, 0);
 
   return (
     <div className="page">
       <section className="together-hero">
-        <span className="eyebrow">Play together</span>
+        <span className="eyebrow">{t('lobbies.eyebrow')}</span>
         <h1>
-          Your mashup. <span className="chrome">Your friends in it.</span>
+          {t('lobbies.title1')} <span className="chrome">{t('lobbies.title2')}</span>
         </h1>
-        <p>Open a lobby from any mashup you play, send the link, and everyone lands in the same world on the exact same version. Joining installs it first if needed.</p>
+        <p>{t('lobbies.lede')}</p>
         <form
           className="invite-field"
           onSubmit={(e) => {
@@ -100,13 +96,13 @@ export function Lobbies({ ctx }: { ctx: Ctx }) {
           }}
         >
           <Icon name="link" size={16} />
-          <input value={link} onChange={(e) => setLink(e.target.value)} placeholder="Paste an invite link: sigf://join/… or sigf.ai/join/…" spellCheck={false} />
-          <button className="act act-get" disabled={!id}>Join</button>
+          <input value={link} onChange={(e) => setLink(e.target.value)} placeholder={t('lobbies.paste')} spellCheck={false} />
+          <button className="act act-get" disabled={!id}>{t('lobby.join')}</button>
         </form>
       </section>
 
       {ctx.hosted && (
-        <Section title="Your lobby" sub="Open while the app runs. Friends join with the link.">
+        <Section title={t('lobbies.yours')} sub={t('lobbies.yoursSub')}>
           <HostCard ctx={ctx} />
         </Section>
       )}
@@ -114,14 +110,14 @@ export function Lobbies({ ctx }: { ctx: Ctx }) {
       <HostedWorlds ctx={ctx} />
 
       <Section
-        title="Public lobbies"
-        sub="Mashups you can play right now, hosted by other players. Only names and player counts are public."
-        aside={list && <span className="live-pill"><Icon name="live" size={10} /> {list.length} open · {players} playing</span>}
+        title={t('lobbies.public')}
+        sub={t('lobbies.publicSub')}
+        aside={lobbies && <span className="live-pill"><Icon name="live" size={10} /> {t('lobbies.openCount', { count: lobbies.length })} · {t('lobbies.playing', { count: players })}</span>}
       >
-        {error && <div className="empty">Lobbies are not reachable right now. {error}</div>}
-        {!error && list === null && <div className="empty">Looking for lobbies…</div>}
-        {!error && list?.length === 0 && <div className="empty">No public lobby for your games right now. Open one from any mashup: Play with friends.</div>}
-        <div className="queue">{list?.map((l, i) => <LobbyRow key={l.id} ctx={ctx} l={l} i={i} />)}</div>
+        {error && <div className="empty">{t('lobbies.unreachable', { error })}</div>}
+        {!error && lobbies === null && <div className="empty">{t('lobbies.looking')}</div>}
+        {!error && lobbies?.length === 0 && <div className="empty">{t('lobbies.none')}</div>}
+        <div className="queue">{lobbies?.map((l, i) => <LobbyRow key={l.id} ctx={ctx} l={l} i={i} />)}</div>
       </Section>
     </div>
   );
@@ -129,11 +125,10 @@ export function Lobbies({ ctx }: { ctx: Ctx }) {
 
 /** "7 h 42 min", "12 min", "under a minute". */
 function timeLeft(ms: number) {
-  if (ms < 60_000) return 'under a minute';
+  if (ms < 60_000) return t('time.underMinute');
   const min = Math.floor(ms / 60_000);
-  return min >= 60 ? `${Math.floor(min / 60)} h ${String(min % 60).padStart(2, '0')} min` : `${min} min`;
+  return min >= 60 ? t('time.hoursMin', { h: String(Math.floor(min / 60)), m: String(min % 60).padStart(2, '0') }) : t('time.min', { count: min });
 }
-const day = (iso: string | number) => new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 
 /** Re-renders every `ms` while mounted (countdowns). */
 function useTick(ms: number) {
@@ -153,11 +148,11 @@ function ServerPanel({ ctx, s }: { ctx: Ctx; s: HostedServer }) {
   const region = ctx.hosting?.regions.find((r) => r.id === s.region)?.label ?? s.region;
   const max = s.maxPlayers ?? ctx.hosting?.limits.maxPlayers ?? 10;
   const title =
-    s.state === 'queued' ? `In line for a free server${s.position ? ` · #${s.position}` : ''}`
-    : s.state === 'starting' ? `Starting your server${s.etaS ? ` · about ${Math.max(1, Math.round(s.etaS / 60))} min` : ''}`
-    : s.state === 'running' ? 'Server ready'
-    : s.state === 'failed' ? 'The server stopped unexpectedly'
-    : 'Server stopped';
+    s.state === 'queued' ? `${t('srv.queued')}${s.position ? ` · #${s.position}` : ''}`
+    : s.state === 'starting' ? `${t('srv.starting')}${s.etaS ? ` · ${t('srv.about', { count: Math.max(1, Math.round(s.etaS / 60)) })}` : ''}`
+    : s.state === 'running' ? t('srv.ready')
+    : s.state === 'failed' ? t('srv.failed')
+    : t('srv.stopped');
   const act = async (f: () => Promise<void>) => {
     setBusy(true);
     await f();
@@ -169,35 +164,35 @@ function ServerPanel({ ctx, s }: { ctx: Ctx; s: HostedServer }) {
         <span className="srv-icon"><Icon name="server" size={16} /></span>
         <div>
           <b>{title}</b>
-          <small>Hosted on SIGF · {region} · free</small>
+          <small>{t('srv.hostedOn', { region: region ?? '' })}</small>
         </div>
         {s.state === 'running' && <Players n={s.players ?? 0} max={max} state={(s.players ?? 0) >= max ? 'full' : 'open'} />}
       </div>
       {(s.state === 'queued' || s.state === 'starting') && <i className="srv-bar" />}
       {s.state === 'running' && (
         <p className="host-hint">
-          The server address is in the lobby: friends join with the invite link, nothing to type.{' '}
+          {t('srv.addressHint')}{' '}
           {left !== null && (
             <span className={`srv-left ${warn ? 'on' : ''}`}>
-              <Icon name="clock" size={12} /> {warn ? `Stops in ${timeLeft(left)}: download the world to keep it` : `${timeLeft(left)} left of ${ctx.hosting?.limits.hours ?? 8} h`}
+              <Icon name="clock" size={12} /> {warn ? t('srv.stopsIn', { time: timeLeft(left) }) : t('srv.left', { time: timeLeft(left), hours: ctx.hosting?.limits.hours ?? 8 })}
             </span>
           )}
         </p>
       )}
-      {(s.state === 'stopped' || s.state === 'failed') && s.worldUntil && <p className="host-hint">Your world is kept until {day(s.worldUntil)}.</p>}
+      {(s.state === 'stopped' || s.state === 'failed') && s.worldUntil && <p className="host-hint">{t('srv.keptUntil', { day: day(s.worldUntil) })}</p>}
       <div className="host-actions">
         {SERVER_ACTIVE.includes(s.state) ? (
           <button className="act act-ghost" disabled={busy} onClick={() => act(ctx.stopServer)}>
-            <Icon name="x" size={14} /> Stop server
+            <Icon name="x" size={14} /> {t('srv.stop')}
           </button>
         ) : (
           <button className="act act-ghost" disabled={busy} onClick={() => act(() => ctx.startServer(s.region ?? 'eu-west-1'))}>
-            <Icon name="server" size={14} /> Start again
+            <Icon name="server" size={14} /> {t('srv.startAgain')}
           </button>
         )}
         {s.state !== 'queued' && (
           <button className="act act-ghost" disabled={busy} onClick={() => act(() => ctx.downloadWorld(s.lobby ?? ctx.hosted!.lobby.id))}>
-            <Icon name="download" size={14} /> Download world
+            <Icon name="download" size={14} /> {t('srv.download')}
           </button>
         )}
       </div>
@@ -210,7 +205,7 @@ export function HostedWorlds({ ctx }: { ctx: Ctx }) {
   const list = ctx.worlds.filter((w) => w.lobby !== ctx.hosted?.lobby.id || !ctx.server || !SERVER_ACTIVE.includes(ctx.server.state));
   if (!list.length) return null;
   return (
-    <Section title="Your hosted worlds" sub="Worlds from your free servers, kept 7 days after the session. Download one to keep it.">
+    <Section title={t('worlds.title')} sub={t('worlds.sub')}>
       <div className="queue">
         {list.map((w, i) => {
           const known = ctx.catalog.find((m) => m.id === w.mashupId);
@@ -220,14 +215,14 @@ export function HostedWorlds({ ctx }: { ctx: Ctx }) {
               <div className="qinfo">
                 <b>{w.name || known?.name || w.mashupId}</b>
                 <span>
-                  hosted {day(w.startedAt * 1000)}
-                  {w.worldUntil ? ` · kept until ${day(w.worldUntil * 1000)}` : ''}
+                  {t('worlds.hosted', { day: day(w.startedAt * 1000) })}
+                  {w.worldUntil ? ` · ${t('worlds.kept', { day: day(w.worldUntil * 1000) })}` : ''}
                 </span>
               </div>
               <button className="act act-get" onClick={() => ctx.downloadWorld(w.lobby)}>
-                <Icon name="download" size={14} /> Download world
+                <Icon name="download" size={14} /> {t('srv.download')}
               </button>
-              <button className="act act-ghost" onClick={() => ctx.forgetWorld(w.lobby)} title="Forget this world here">
+              <button className="act act-ghost" onClick={() => ctx.forgetWorld(w.lobby)} title={t('worlds.forget')} aria-label={t('worlds.forget')}>
                 <Icon name="x" size={14} />
               </button>
             </div>
@@ -251,7 +246,7 @@ function HostCard({ ctx }: { ctx: Ctx }) {
         <div>
           <span className={`state-dot state-${l.state}`} />
           <b>{l.mashup.name}</b>
-          <small>{l.mode === 'public' ? 'Public lobby' : 'Invite only'} · v{l.mashup.version}</small>
+          <small>{l.mode === 'public' ? t('host.public') : t('host.inviteOnly')} · v{l.mashup.version}</small>
         </div>
         <Players n={l.players} max={l.maxPlayers} state={l.state} />
       </div>
@@ -260,13 +255,13 @@ function HostCard({ ctx }: { ctx: Ctx }) {
         <button
           className="act act-get"
           onClick={async () => {
-            if (await copy(l.url)) {
+            if (await copyText(l.url)) {
               setCopied(true);
               setTimeout(() => setCopied(false), 1800);
             }
           }}
         >
-          <Icon name={copied ? 'check' : 'copy'} size={14} /> {copied ? 'Copied' : 'Copy invite'}
+          <Icon name={copied ? 'check' : 'copy'} size={14} /> {copied ? t('host.copied') : t('host.copy')}
         </button>
       </div>
       {srv && <ServerPanel ctx={ctx} s={srv} />}
@@ -274,22 +269,22 @@ function HostCard({ ctx }: { ctx: Ctx }) {
         <div className="join-error">
           <span>{ctx.serverError}</span>
           <div className="host-actions">
-            <button className="act act-get" onClick={() => ctx.startServer(srv?.region ?? (ctx.hosting ? nearestRegion(ctx.hosting) : 'eu-west-1'))}>Try again</button>
+            <button className="act act-get" onClick={() => ctx.startServer(srv?.region ?? (ctx.hosting ? nearestRegion(ctx.hosting) : 'eu-west-1'))}>{t('common.tryAgain')}</button>
           </div>
         </div>
       )}
-      {!srv && !ctx.serverError && l.state === 'waiting' && <p className="host-hint">Waiting for your game. {mc ? 'Start your world, then type /publish true survival 25565 in chat.' : 'Start the game and open your server.'}</p>}
+      {!srv && !ctx.serverError && l.state === 'waiting' && <p className="host-hint">{t('host.waiting')} {mc ? tx('host.waitingMc', { cmd: '/publish true survival 25565' }) : t('host.waitingOther')}</p>}
       {!mc && !srv && (
-        <div className="stepper" title="Players in your game (counted automatically for Minecraft)">
-          <span>Players</span>
-          <button onClick={() => ctx.hostUpdate(Math.max(1, l.players - 1))} aria-label="One less">−</button>
+        <div className="stepper" title={t('host.playersTitle')}>
+          <span>{t('host.players')}</span>
+          <button onClick={() => ctx.hostUpdate(Math.max(1, l.players - 1))} aria-label={t('host.oneLess')}>−</button>
           <b>{l.players}</b>
-          <button onClick={() => ctx.hostUpdate(Math.min(l.maxPlayers, l.players + 1))} aria-label="One more">+</button>
+          <button onClick={() => ctx.hostUpdate(Math.min(l.maxPlayers, l.players + 1))} aria-label={t('host.oneMore')}>+</button>
         </div>
       )}
       <div className="host-actions">
-        <button className="act act-ghost" onClick={() => ctx.closeHost()} title={srv && SERVER_ACTIVE.includes(srv.state) ? 'Also stops your free server (the world is kept 7 days)' : undefined}>
-          <Icon name="x" size={14} /> Close lobby
+        <button className="act act-ghost" onClick={() => ctx.closeHost()} title={srv && SERVER_ACTIVE.includes(srv.state) ? t('host.closeTitle') : undefined}>
+          <Icon name="x" size={14} /> {t('host.close')}
         </button>
       </div>
     </div>
@@ -311,6 +306,9 @@ const addressGames = (m: Mashup) => {
   const net = sides.filter((g) => g === 'minecraft' || CONNECT_GAMES.has(g));
   return net.length ? net : [m.host];
 };
+
+const SIGF_STEPS = ['together.sigf1', 'together.sigf2', 'together.sigf3'] as const;
+const OWN_STEPS = ['together.own2', 'together.own3'] as const;
 
 /** "Play with friends" on a mashup: open a lobby (invite or public), or join one of its public lobbies. */
 export function PlayTogether({ ctx, m }: { ctx: Ctx; m: Mashup }) {
@@ -352,20 +350,20 @@ export function PlayTogether({ ctx, m }: { ctx: Ctx; m: Mashup }) {
 
   return (
     <div className="together">
-      <h4>Play with friends</h4>
+      <h4>{t('together.title')}</h4>
       {mine ? (
         <HostCard ctx={ctx} />
       ) : inTauri && (!m.version || !m.recipeUrl) ? (
-        <p className="host-hint">Multiplayer opens once this mashup is in the live catalog.</p>
+        <p className="host-hint">{t('together.notLive')}</p>
       ) : !ready ? (
-        <p className="host-hint">Get it first, then invite your friends.</p>
+        <p className="host-hint">{t('together.getFirst')}</p>
       ) : outdated ? (
         <p className="host-hint">
-          You have v{inst.version}; lobbies run v{m.version}. <a onClick={() => ctx.get(m)}>Update</a> to host.
+          {tx('together.outdated', { have: inst.version!, latest: m.version!, update: <a onClick={() => ctx.get(m)}>{t('card.update')}</a> })}
         </p>
       ) : !open ? (
-        <button className="act act-get together-open" onClick={() => setOpen(true)} disabled={!!ctx.hosted} title={ctx.hosted ? 'Close your other lobby first' : undefined}>
-          <Icon name="people" size={15} /> Play with friends
+        <button className="act act-get together-open" onClick={() => setOpen(true)} disabled={!!ctx.hosted} title={ctx.hosted ? t('together.otherLobby') : undefined}>
+          <Icon name="people" size={15} /> {t('together.title')}
         </button>
       ) : (
         <form
@@ -387,63 +385,60 @@ export function PlayTogether({ ctx, m }: { ctx: Ctx; m: Mashup }) {
             <>
               {/* The default when SIGF can host: one button, nothing to configure. */}
               <p className="together-lede">
-                <Icon name="server" size={14} /> We start a free server with this exact version. Ready in about a minute, up to {cap} friends, {ctx.hosting?.limits.hours ?? 8} h.
+                <Icon name="server" size={14} /> {t('together.sigfLede', { count: cap, hours: ctx.hosting?.limits.hours ?? 8 })}
               </p>
               <ol className="together-steps">
-                <li>Start the server</li>
-                <li>Copy the invite link and send it</li>
-                <li>Friends click it: the app installs the mashup and joins you</li>
+                {SIGF_STEPS.map((k) => <li key={k}>{t(k)}</li>)}
               </ol>
             </>
           ) : (
             <>
-              <p className="together-lede">Your own game is the server. Three steps:</p>
+              <p className="together-lede">{t('together.ownLede')}</p>
               <ol className="together-steps">
-                <li>{games.includes('minecraft') ? <>Launch the mashup, open your world, type <code>/publish true survival 25565</code></> : 'Launch the mashup and open your game to other players'}</li>
-                <li>Create the invite below and send the link</li>
-                <li>Friends click it and join you</li>
+                <li>{games.includes('minecraft') ? tx('together.own1Mc', { cmd: <code>/publish true survival 25565</code> }) : t('together.own1')}</li>
+                {OWN_STEPS.map((k) => <li key={k}>{t(k)}</li>)}
               </ol>
               {games.map((g) => (
                 <label key={g} className={`field ${addr[g] && !validAddress(addr[g]) ? 'bad' : ''}`}>
-                  <small>{games.length > 1 ? `${GAME[g]?.short ?? g} address` : 'Your address'}</small>
-                  <input value={addr[g] ?? ''} onChange={(e) => setAddr((a) => ({ ...a, [g]: e.target.value }))} spellCheck={false} placeholder="Click “Fill it for me”" />
+                  <small>{games.length > 1 ? t('together.gameAddress', { game: GAME[g]?.short ?? g }) : t('together.yourAddress')}</small>
+                  <input value={addr[g] ?? ''} onChange={(e) => setAddr((a) => ({ ...a, [g]: e.target.value }))} spellCheck={false} placeholder={t('together.addressPlaceholder')} />
                 </label>
               ))}
               {!games.every((g) => addr[g]?.trim()) && (
                 <button type="button" className="act act-ghost" onClick={() => void fillLan()}>
-                  <Icon name="link" size={13} /> Fill it for me
+                  <Icon name="link" size={13} /> {t('together.fill')}
                 </button>
               )}
-              <p className="host-hint">Works for friends on your home network. For friends elsewhere, use a tunnel such as playit.gg and paste its address.</p>
+              <p className="host-hint">{t('together.lanHint')}</p>
             </>
           )}
           {!loadName() && (
             <label className="field">
-              <small>Your name</small>
-              <input value={name} onChange={(e) => setName(e.target.value)} maxLength={32} placeholder="What your friends see" />
+              <small>{t('together.name')}</small>
+              <input value={name} onChange={(e) => setName(e.target.value)} maxLength={32} placeholder={t('together.namePlaceholder')} />
             </label>
           )}
           {onSigf && ctx.hosting && ctx.hosting.regions.length > 1 && (
             <div className="seg">
               {ctx.hosting.regions.map((r) => (
-                <button key={r.id} type="button" className={region === r.id ? 'on' : ''} disabled={!r.available} title={r.available ? undefined : 'Opens tomorrow'} onClick={() => setRegion(r.id)}>
-                  {r.label}{r.available ? '' : ' · tomorrow'}
+                <button key={r.id} type="button" className={region === r.id ? 'on' : ''} disabled={!r.available} title={r.available ? undefined : t('together.opensTomorrow')} onClick={() => setRegion(r.id)}>
+                  {r.label}{r.available ? '' : ` · ${t('together.tomorrow')}`}
                 </button>
               ))}
             </div>
           )}
           <label className="together-public">
-            <input type="checkbox" checked={mode === 'public'} onChange={(e) => setMode(e.target.checked ? 'public' : 'invite')} /> Also list it publicly so anyone can join
+            <input type="checkbox" checked={mode === 'public'} onChange={(e) => setMode(e.target.checked ? 'public' : 'invite')} /> {t('together.public')}
           </label>
           <div className="host-actions">
             {canHost && (
               <a className="together-switch" onClick={() => setWhere(onSigf ? 'own' : 'sigf')}>
-                {onSigf ? 'Host from my own game instead' : 'Use a free SIGF server instead'}
+                {onSigf ? t('together.useOwn') : t('together.useSigf')}
               </a>
             )}
-            <button type="button" className="act act-ghost" onClick={() => setOpen(false)}>Cancel</button>
+            <button type="button" className="act act-ghost" onClick={() => setOpen(false)}>{t('common.cancel')}</button>
             <button className="act act-get" disabled={!nameOk || !addrOk || busy}>
-              {busy ? 'Starting…' : onSigf ? 'Start free server' : 'Create invite'}
+              {busy ? t('together.starting') : onSigf ? t('together.startServer') : t('together.create')}
             </button>
           </div>
         </form>
@@ -469,11 +464,11 @@ export type Joining = {
   prism?: boolean;
 };
 
-const STEPS: { id: Joining['step']; label: string }[] = [
-  { id: 'lobby', label: 'Checking the lobby' },
-  { id: 'install', label: 'Installing the exact version' },
-  { id: 'launch', label: 'Launching' },
-  { id: 'done', label: 'In the game' },
+const STEPS: { id: Joining['step']; label: Key }[] = [
+  { id: 'lobby', label: 'joinSheet.stepLobby' },
+  { id: 'install', label: 'joinSheet.stepInstall' },
+  { id: 'launch', label: 'joinSheet.stepLaunch' },
+  { id: 'done', label: 'joinSheet.stepDone' },
 ];
 
 /** What joining will do, before anything happens: the mashup, who made it, the games it changes, where it connects. */
@@ -483,28 +478,28 @@ function JoinConfirm({ ctx, l, install, onConfirm, onClose }: { ctx: Ctx; l: Lob
   return (
     <div className="join-confirm">
       <dl className="join-facts">
-        <div><dt>Mashup</dt><dd>{l.mashup.name} <span className="muted">v{l.mashup.version}</span></dd></div>
-        <div><dt>Made by</dt><dd>{author ?? <span className="muted">Not in your catalog: unknown author</span>}</dd></div>
-        <div><dt>Invited by</dt><dd>{l.host}</dd></div>
+        <div><dt>{t('joinSheet.mashup')}</dt><dd>{l.mashup.name} <span className="muted">v{l.mashup.version}</span></dd></div>
+        <div><dt>{t('detail.madeBy')}</dt><dd>{author ?? <span className="muted">{t('joinSheet.unknownAuthor')}</span>}</dd></div>
+        <div><dt>{t('joinSheet.invitedBy')}</dt><dd>{l.host}</dd></div>
         <div>
-          <dt>{install ? 'Changes' : 'Starts'}</dt>
+          <dt>{install ? t('joinSheet.changes') : t('joinSheet.starts')}</dt>
           <dd>{l.games.map(gameName).join(' + ')}</dd>
         </div>
         <div>
-          <dt>Connects to</dt>
+          <dt>{t('joinSheet.connects')}</dt>
           <dd className="join-addr">
-            {l.targets.length ? l.targets.map((t) => <code key={t.game}>{l.targets.length > 1 ? `${gameName(t.game)}: ` : ''}{t.address}</code>) : <span className="muted">No server address yet</span>}
+            {l.targets.length ? l.targets.map((t) => <code key={t.game}>{l.targets.length > 1 ? `${gameName(t.game)}: ` : ''}{t.address}</code>) : <span className="muted">{t('joinSheet.noAddress')}</span>}
           </dd>
         </div>
       </dl>
       <p className="host-hint">
         {install
-          ? 'Joining downloads this exact version, installs it into your game folders (Restore vanilla undoes it), then starts the game connected to the server above. Nothing is downloaded until you click Install & join.'
-          : 'This version is already installed. Joining starts the game connected to the server above.'}
+          ? t('joinSheet.installHint')
+          : t('joinSheet.installedHint')}
       </p>
       <div className="host-actions">
-        <button className="act act-ghost" onClick={onClose}>Cancel</button>
-        <button className="act act-get" onClick={onConfirm} disabled={!l.targets.length} autoFocus>{install ? 'Install & join' : 'Join'}</button>
+        <button className="act act-ghost" onClick={onClose}>{t('common.cancel')}</button>
+        <button className="act act-get" onClick={onConfirm} disabled={!l.targets.length} autoFocus>{install ? t('joinSheet.installJoin') : t('lobby.join')}</button>
       </div>
     </div>
   );
@@ -520,19 +515,19 @@ export function JoinSheet({ ctx, j, onClose, onConfirm }: { ctx: Ctx; j: Joining
     <div className="scrim scrim-center" onClick={j.step === 'done' || j.step === 'error' || j.step === 'confirm' ? onClose : undefined}>
       <div className="join-sheet" onClick={(e) => e.stopPropagation()}>
         <MashupCover host={known?.host ?? l?.games[0] ?? 'minecraft'} guest={known?.guest ?? l?.games[1]} className="join-cover" />
-        <button className="detail-close" onClick={onClose} aria-label="Close"><Icon name="x" size={16} /></button>
+        <button className="detail-close" onClick={onClose} aria-label={t('common.close')}><Icon name="x" size={16} /></button>
         <div className="join-body">
-          <span className="eyebrow">{l ? `${l.host} invites you` : 'Invite'}</span>
-          <h2>{l?.mashup.name ?? 'Opening the lobby…'}</h2>
-          {l && <p className="muted">v{l.mashup.version} · {l.players}/{l.maxPlayers} players · {l.games.map(gameName).join(' + ')}</p>}
+          <span className="eyebrow">{l ? t('joinSheet.invites', { host: l.host }) : t('joinSheet.invite')}</span>
+          <h2>{l?.mashup.name ?? t('joinSheet.opening')}</h2>
+          {l && <p className="muted">v{l.mashup.version} · {t('joinSheet.players', { n: l.players, count: l.maxPlayers })} · {l.games.map(gameName).join(' + ')}</p>}
           {j.step === 'confirm' && l ? (
             <JoinConfirm ctx={ctx} l={l} install={!!j.install} onConfirm={() => onConfirm(l)} onClose={onClose} />
           ) : j.step === 'error' ? (
             <div className="join-error">
               <span>{j.error}</span>
               <div className="host-actions">
-                {j.prism && <button className="act act-ghost" onClick={() => openUrl('https://prismlauncher.org/download/windows/')}>Get Prism Launcher <Icon name="ext" size={12} /></button>}
-                <button className="act act-get" onClick={() => ctx.join(j.id)}>Try again</button>
+                {j.prism && <button className="act act-ghost" onClick={() => void appPlatform().then((p) => openUrl(prismDownload(p)))}>{t('joinSheet.getPrism')} <Icon name="ext" size={12} /></button>}
+                <button className="act act-get" onClick={() => ctx.join(j.id)}>{t('common.tryAgain')}</button>
               </div>
             </div>
           ) : (
@@ -540,14 +535,14 @@ export function JoinSheet({ ctx, j, onClose, onConfirm }: { ctx: Ctx; j: Joining
               {STEPS.map((s, i) => (
                 <li key={s.id} className={i < at || j.step === 'done' ? 'done' : i === at ? 'on' : ''}>
                   <i>{i < at || j.step === 'done' ? <Icon name="check" size={12} /> : null}</i>
-                  <span>{s.label}</span>
+                  <span>{t(s.label)}</span>
                   {s.id === 'install' && i === at && <small>{pct}%</small>}
                   {s.id === 'install' && i === at && <em className="bar" style={{ ['--p' as string]: `${pct}%` }} />}
                 </li>
               ))}
             </ol>
           )}
-          {j.step === 'done' && <p className="host-hint">The game is starting and connects to the lobby by itself. You can close this.</p>}
+          {j.step === 'done' && <p className="host-hint">{t('joinSheet.doneHint')}</p>}
         </div>
       </div>
     </div>

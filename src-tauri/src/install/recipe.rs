@@ -40,6 +40,34 @@ pub struct Recipe {
     /// Files SIGF must not distribute, built once on the player's PC by a pinned script with a pinned toolchain.
     #[serde(default)]
     pub player_build: Vec<PlayerBuild>,
+    /// The systems it runs on (`windows`, `macos`). Missing: see `install::platform::platforms` for the default.
+    #[serde(default)]
+    pub platforms: Option<Vec<String>>,
+    /// Mashups (`sigf/<repo>`) that write the same files on the same game: never installed together. The check is
+    /// symmetric (`Engine::conflict`): A naming B also blocks B while A is installed, so naming it on one side is enough.
+    #[serde(default)]
+    pub conflicts: Vec<String>,
+    /// Files the player installs themselves (xNVSE's `nvse_loader.exe` in the game folder): checked before install and
+    /// before Play, which then shows `message` and `page` instead of starting anything.
+    #[serde(default)]
+    pub requires_files: Vec<RequiredFile>,
+}
+
+/// `requires_files[]`: one file a prerequisite the app does not install puts into a game's folder
+/// (docs/RECIPE-FORMAT.md section 4, `requires_files`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RequiredFile {
+    /// The prerequisite (`xnvse`), as in `requires[]`.
+    pub id: String,
+    /// The `games[]` entry whose scanned install folder holds the file.
+    pub game: String,
+    /// `{game}/<plain relative segments>`: `{game}/nvse_loader.exe`.
+    pub path: String,
+    /// What the player reads instead of a start: "Install xNVSE 6.4.9+ first".
+    pub message: String,
+    /// Where to get it (https).
+    #[serde(default)]
+    pub page: Option<String>,
 }
 
 /// `own_copies[]`: one file of a game the player owns (docs/RECIPE-FORMAT.md section 4, "Bring your own copy").
@@ -282,6 +310,31 @@ pub struct LaunchStep {
     /// through a script extender. Checked to stay inside the game folder.
     #[serde(default)]
     pub exe: Option<String>,
+    /// A program the recipe itself installs into `{app}` (`iw4l.exe`), started from there; pinned by the sha256 the
+    /// recipe gives that file and checked again at Play.
+    #[serde(default)]
+    pub app_exe: Option<String>,
+    /// Start through me3 (the FromSoftware mod loader) with the recipe's `.me3` profile, offline. The app builds the
+    /// whole command line itself; see `crate::launch::me3_command`.
+    #[serde(default)]
+    pub me3: Option<Me3Spec>,
+}
+
+/// `launch[].me3` (docs/RECIPE-FORMAT.md section 4, "me3 launch").
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Me3Spec {
+    /// The profile the recipe installs: `{app}/<...>.me3` or `{game}/<...>.me3`.
+    pub profile: String,
+    /// A `me3.exe` the recipe installs (`{game}/EldenCraft/me3/bin/me3.exe`); without it, the player's me3 from its
+    /// installer (`%LOCALAPPDATA%\Programs\garyttierney\me3\bin\me3.exe`).
+    #[serde(default)]
+    pub exe: Option<String>,
+    /// me3's `--savefile`: a plain `.sl2` file name, so the mod never touches the player's normal save.
+    #[serde(default)]
+    pub savefile: Option<String>,
+    /// me3's `--disable-arxan` (offline play with the game's anti-tamper off).
+    #[serde(default)]
+    pub disable_arxan: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

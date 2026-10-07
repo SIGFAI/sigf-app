@@ -223,12 +223,13 @@ pub struct Found {
 /// folders. Only these, a few levels deep: never the whole disk.
 pub fn default_roots() -> Vec<PathBuf> {
     let mut out = vec![];
-    if let Some(home) = std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME")).filter(|h| !h.is_empty()).map(PathBuf::from) {
+    if let Some(home) = super::user_home() {
         for sub in ["Downloads", "Desktop", "Documents", "ROMs", "Roms", "roms", "Games", "OneDrive/Desktop", "OneDrive/Documents", "OneDrive/Downloads"] {
             out.push(home.join(sub));
         }
         out.push(home.clone());
     }
+    #[cfg(windows)]
     for drive in ["C:", "D:", "E:"] {
         out.push(PathBuf::from(format!("{drive}/ROMs")));
         out.push(PathBuf::from(format!("{drive}/Emulation")));

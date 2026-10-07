@@ -15,6 +15,8 @@ export type Privacy = {
   lobbyGames: boolean;
   /** `ask`: the host form starts empty with a "Use my LAN address" button; `auto`: it fills in this PC's LAN address. */
   lanAddress: 'ask' | 'auto';
+  /** The UI language the player picked (`en`, `zh-CN`, ...); absent: the system's. Not a request, never sent. */
+  language?: string | null;
 };
 
 export const DEFAULT_PRIVACY: Privacy = { asked: false, storeArt: true, artSearch: true, lobbyGames: true, lanAddress: 'ask' };

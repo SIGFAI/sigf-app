@@ -3,6 +3,7 @@ import { MashupCover } from '../ui';
 import { ActionButton, gameName } from './shared';
 import { HostedWorlds } from './Lobbies';
 import { Icon } from '../ui';
+import { t } from '../i18n';
 
 export function Queue({ ctx }: { ctx: Ctx }) {
   const rows = Object.entries(ctx.installs)
@@ -15,15 +16,15 @@ export function Queue({ ctx }: { ctx: Ctx }) {
       <section className="section">
         <header>
           <div>
-            <h2>Installed mashups</h2>
-            <p>Each one lives in its own profile. Restore vanilla removes it and puts back every file it touched.</p>
+            <h2>{t('queue.title')}</h2>
+            <p>{t('queue.sub')}</p>
           </div>
-          <label className="act act-ghost" title="Install a mashup.json from disk (creators, tests)">
-            <Icon name="plus" size={15} /> Install from file
+          <label className="act act-ghost" title={t('queue.fromFileTitle')}>
+            <Icon name="plus" size={15} /> {t('queue.fromFile')}
             <input type="file" accept=".json,application/json" hidden onChange={async (e) => { const f = e.target.files?.[0]; if (f) ctx.sideload(await f.text()); e.target.value = ''; }} />
           </label>
         </header>
-        {rows.length === 0 && <div className="empty">Nothing installed yet. Pick a mashup on the Mix board.</div>}
+        {rows.length === 0 && <div className="empty">{t('queue.empty')}</div>}
         <div className="queue">
           {rows.map(({ m, i }) => (
             <div key={m!.id} className="qrow" onClick={() => ctx.open(m!)}>
@@ -34,7 +35,12 @@ export function Queue({ ctx }: { ctx: Ctx }) {
               </div>
               <ActionButton ctx={ctx} m={m!} />
               {i.phase === 'ready' && (
-                <button className="act act-ghost" onClick={(e) => { e.stopPropagation(); ctx.restore(m!); }} title="Restore vanilla">
+                <button className="act act-ghost" onClick={(e) => { e.stopPropagation(); ctx.report(m!); }} title={t('report.action')} aria-label={t('report.action')}>
+                  <Icon name="bug" size={15} />
+                </button>
+              )}
+              {i.phase === 'ready' && (
+                <button className="act act-ghost" onClick={(e) => { e.stopPropagation(); ctx.restore(m!); }} title={t('detail.restore')} aria-label={t('detail.restore')}>
                   <Icon name="restore" size={15} />
                 </button>
               )}

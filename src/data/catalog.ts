@@ -38,6 +38,9 @@ export type Mashup = {
   clip?: string;
   /** "beta" for library fusions made by community modders (live catalog only). */
   status?: string | null;
+  /** A community submission (sigf.ai/submit), credited "Community · by" its GitHub owner (live catalog only). Only
+   *  `true` counts (isCommunity). */
+  community?: boolean;
   /** It can run on a free hosted server (the recipe's `server` block, live catalog only). */
   server?: { game: string; maxPlayers: number } | null;
   /** Outbound links (live catalog only): source repo, the modder's GitHub profile, bug tracker, releases. */
@@ -50,7 +53,23 @@ export type Mashup = {
   ownCopies?: { game: string; label: string }[];
   /** Built once on the player's PC on first install (live catalog only). */
   playerBuild?: { label: string; minutes: number | null }[];
+  /** The systems it runs on (`windows`, `macos`; live catalog only). Absent: Windows only. */
+  platforms?: string[];
+  /** Mashup ids it is never installed with: they change the same game files (live catalog only, both ways). */
+  conflicts?: string[];
 };
+
+/** A community submission: the catalog's `community` is exactly `true` (anything else is not). */
+export const isCommunity = (m: Pick<Mashup, 'community'>) => m.community === true;
+
+/**
+ * The installed mashup `m` cannot be installed next to, if any. The catalog lists conflicts both ways (one card naming
+ * the other is enough), so `m.conflicts` is the whole set. The core checks it again (with what each installed recipe
+ * named), so a stale catalog never lets a pair through.
+ */
+export function installedConflict(m: Mashup, installed: (id: string) => boolean): string | null {
+  return m.conflicts?.find((id) => id !== m.id && installed(id)) ?? null;
+}
 
 export const CATALOG: Mashup[] = [
   {

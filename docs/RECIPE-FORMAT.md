@@ -37,6 +37,17 @@ and serves it, and the app in this repository installs it.
 | GOG Galaxy | `HKLM\SOFTWARE\WOW6432Node\GOG.com\Games\<id>` | gameID, gameName, path, ver |
 | Minecraft | `%APPDATA%\.minecraft`, Prism (`%APPDATA%\PrismLauncher`), Modrinth App (`%APPDATA%\ModrinthApp`) | launcher, instances |
 
+On macOS (`scan/*.rs`, `cfg(target_os = "macos")`), the same stores are read from their Mac locations; the canonical
+game ids and launch URIs are the same:
+
+| Store | Source on macOS |
+|---|---|
+| Steam | `~/Library/Application Support/Steam` → `steamapps/libraryfolders.vdf` → `appmanifest_<id>.acf` |
+| Epic | `~/Library/Application Support/Epic/EpicGamesLauncher/Data/Manifests/*.item` |
+| GOG Galaxy | each game's own `goggame-<id>.info` (`gameId`, `rootGameId`, `name`, `buildId`) in the `.app` bundle's `Contents/Resources/` or at the top of its folder, under `/Applications`, `~/Applications`, `~/GOG Games` (Galaxy's own library is a SQLite database the app does not read) |
+| Ubisoft Connect | none (no Mac client) |
+| Minecraft | `~/Library/Application Support/minecraft`, Prism (`~/Library/Application Support/PrismLauncher`, program `Prism Launcher.app/Contents/MacOS/prismlauncher` in `/Applications` or `~/Applications`), Modrinth App (`~/Library/Application Support/ModrinthApp`) |
+
 Each detected game maps to a **canonical game id** (`gta5`, `skyrim`, `minecraft`, ...) through the app's built-in game
 list, so the same game bought on two stores matches the same mods. The scan only reads; it never writes.
 
@@ -53,7 +64,8 @@ launch Minecraft itself and never sees a Minecraft account. A Minecraft mod ship
 format: open, documented, imported by Prism, the Modrinth App and other launchers).
 
 1. Prism found → the app unpacks the `.mrpack` itself into `<Prism data>/instances/<slug>/` (`instance.cfg`,
-   `mmc-pack.json`, files checked against the index hashes, `overrides/`), then `prismlauncher.exe --launch <slug>`.
+   `mmc-pack.json`, files checked against the index hashes, `overrides/`), then `prismlauncher.exe --launch <slug>`
+   (on macOS the binary inside `Prism Launcher.app`, same arguments).
    Prism's `--import` opens a dialog, so it is only the fallback.
 2. Else Modrinth App found → open the `.mrpack` with it.
 3. Else → the app asks the player to install Prism Launcher (GPL-3.0, a separate program). The player signs in once in
@@ -101,6 +113,7 @@ Unknown fields are ignored by the app.
   "built_by": { "agent": "SIGF" },
   "server": { "game": "minecraft", "mc": "26.3", "loader": "fabric@0.19.5", "ram_gb": 2, "max_players": 10, "pack": "gta5-blocky.mrpack" },
   "idea_by": "alice", "kit": { "id": "crossover-gta5-minecraft", "status": null }, "built_at": "2026-10-05T00:00:00.000Z",
+  "requires_files": [ { "id": "...", "game": "...", "path": "{game}/...", "message": "...", "page": "https://..." } ], // optional
   "notes": [ "..." ]                         // optional: what the player must know
 }
 ```
@@ -152,7 +165,7 @@ Fields, one format each:
     one entry must be under it. For upstream zips wrapped in a top folder, installed as released.
   - Within one step, a later file wins over an earlier one on the same path (a kit's runtime layer is listed after the
     mod so the kit's `mapspawn.nut` stays).
-- `launch[]`: `{ game, args?, wait?, exe? }`, in start order (a passthrough's Minecraft side first). `args` may use the
+- `launch[]`: `{ game, args?, wait?, exe?, app_exe?, me3? }`, in start order (a passthrough's Minecraft side first). `args` may use the
   root placeholders; the app returns them resolved to absolute paths (`-file {app}/mod.pk3` ->
   `-file %LOCALAPPDATA%\SIGF\profiles\sigf-doom-x\doom\mod.pk3`) and refuses any other `{placeholder}`. `wait`:
   `port:<n>` (1-65535), the next game starts once `127.0.0.1:<n>` accepts a connection (polled up to 120 s, then Play
@@ -166,6 +179,80 @@ Fields, one format each:
   file name (`skse64` for `skse64_loader.exe`) and its `page`. For a Steam game the app first makes sure Steam runs
   (`steam.exe` in the process list; else `steam://open/main` and up to 20 s for it), then starts the exe with the
   resolved `args` (plus join args) and the game folder as working directory. Joining a lobby launches the same way.
+  `app_exe` (optional): a program the recipe itself installs into `{app}` (`iw4l.exe`; `{app}/` prefix optional, plain
+  relative segments, must end in `.exe`), for a mashup that is its own program. It must be a file the same game's
+  install step places (a plain file's `dst`, or an entry of an unpacked zip's `contents`, its `root` stripped): the app
+  records its sha256 at install (`games[].exe = { path, dir, sha256, own: true }`) and at Play starts it only when the
+  file still has that hash (else `<exe> changed since the install: Restore vanilla, then Get the mashup again`), from
+  the `{app}` folder, with the resolved `args`. No Steam start: it is not the game's own exe.
+- `launch[].me3` (optional), **me3 launch**: start a FromSoftware game through me3 (garyttierney/me3, the mod loader)
+  with the recipe's `.me3` profile, offline. `{ profile, exe?, savefile?, disable_arxan? }`:
+  - `profile`: `{app}/<...>.me3` or `{game}/<...>.me3` (plain segments), a file the step installs.
+  - `exe` (optional): a `me3.exe` the step installs into `{app}` or `{game}` (the file name must be `me3.exe`), pinned
+    by its sha256 like an `app_exe`. Without it the app uses the player's me3 from its installer, at the one fixed place
+    `me3_installer.exe` puts it: `%LOCALAPPDATA%\Programs\garyttierney\me3\bin\me3.exe` (never PATH or the working
+    folder). Missing: Play fails with `me3 not found: install ME3 from <page>` (the `requires` entry `me3`).
+  - `savefile` (optional): me3's `--savefile`, a plain file name `[A-Za-z0-9._-]{5,64}` ending in `.sl2`.
+  - `disable_arxan` (optional, boolean): me3's `--disable-arxan` (offline play with the anti-tamper off; QC.md).
+  - The game must be one me3 starts (`eldenring`, `nightreign`, `sekiro`; `launch.rs` `ME3_GAMES`), the step's strategy
+    not `mrpack`, and the step has no `args`: the app builds the whole command line itself, nothing else from the recipe
+    reaches it: `me3.exe launch --game <id> --profile <absolute profile> [--savefile <name>] [--disable-arxan] --online
+    false`, working folder the profile's. The profile is resolved again at Play inside its folder (junctions included).
+    For a Steam game Steam is started first, as for `exe`. Recorded as `games[].me3` in `installed.json`.
+  - Example (ER Mario): `{ "game": "eldenring", "me3": { "profile": "{app}/er-mario.me3" } }`.
+  - `exe`, `app_exe` and `me3` exclude each other on one launch step.
+  A game the recipe installs but leaves out of a non-empty `launch[]` is never started by Play (`games[].noStart` in
+  `installed.json`): the mod starts it itself, hidden (EldenKill's and UltraCraft's ULTRAKILL, GModLight's Garry's
+  Mod), or the player starts it from another tool. With no `launch[]` at all, every game starts as before.
+- `requires_files` (optional): files a prerequisite the app does not install (`requires[]` without `source`) puts into a
+  game folder, so a mashup fails clearly instead of silently when it is missing. 1 to 8 of
+  `{ id, game, path, message, page }`: `id` the prerequisite (`[a-z0-9-]{1,40}`, as in `requires[]`), `game` one of
+  `games[]` (its scanned install folder), `path` `{game}/<plain relative segments>`, `message` what the player reads
+  (1 to 120 chars, no control character), `page` where to get it (https, no user, port, query or fragment, at most 300
+  chars). Example (MineNV): `{ "id": "xnvse", "game": "falloutnv", "path": "{game}/nvse_loader.exe", "message":
+  "Install xNVSE 6.4.9+ first", "page": "https://github.com/xNVSE/NVSE/releases" }`.
+  - Install: checked before any download; a missing file is the typed error `missingFile` (`{ id, game, path, page }`,
+    message `<message>: <page>`), nothing is written. The entries are kept in `installed.json` (`requiresFiles`).
+  - Play: checked again before anything starts (a passthrough never leaves a hidden Minecraft behind), as is every
+    game's loader, me3 and profile. A missing file answers the `play` command with `{ kind: "missingFile", message,
+    page }`; the app shows the message and offers to open the page.
+  - Same rule in the app (`install/check.rs` `requires_files_ok`, `install/mod.rs` `required_files`) and the catalog
+    (`requiresFilesOk`, error `bad_requires_files`).
+- Older apps (0.1.1 and 0.1.2 builds before these fields) ignore `app_exe`, `me3` and `requires_files` like any unknown
+  field: they install the recipe as before and Play does what it did (the store's launch of the host). So a recipe that
+  uses them keeps, in its `notes` or `how_to_play`, the manual way for those apps ("On an older app: open
+  er-mario.me3 in ...").
+- `platforms` (optional): the systems the mashup runs on, `["windows"]` or `["windows", "macos"]` (1 to 4 distinct ids
+  of `[a-z0-9-]`; ids the app does not know yet are ignored). The app, the catalog and the card all use one rule
+  (`src-tauri/src/install/platform.rs`, the catalog's `recipePlatforms`):
+  - given: the known ids it names;
+  - missing: `windows`, plus `macos` when **every** install step is `mrpack` (a Minecraft pack in Prism Launcher, which
+    runs on macOS). Anything that installs into another game (BepInEx, script extenders, ASI plugins, FiveM, `args`
+    launches through a Windows store build) is Windows only unless the recipe says otherwise;
+  - never `macos`, whatever the field says, when the recipe needs Windows: a `player_build` (the pinned toolchain is
+    w64devkit), a launch `exe`, `app_exe` or `me3`, or an install file that is a Windows binary (`src`, `dst` or a `contents` path ending in
+    `.dll`, `.asi` or `.exe`).
+
+  A Mac app lists only the cards whose `platforms` include `macos`, and its `install` and `join_lobby` commands refuse
+  any other recipe ("<name> runs on Windows only, not on macOS"). Set `["windows"]` on a pure Minecraft pack that does
+  not run on a Mac (a mod with Windows-only natives), and `["windows", "macos"]` on another recipe only when it was
+  checked on a Mac.
+- `conflicts` (optional): mashups that must never be installed together with this one, `["sigf/peakcraft"]`. 1 to 16
+  distinct mashup ids of the form `sigf/<repo name>` (`[A-Za-z0-9._-]{1,100}`, not `.`-led, not ending in `.git`), never
+  the recipe's own id; an id that is not published (yet) is allowed. The app (`install/check.rs` `conflicts_ok`) and the
+  catalog (`conflictsOk`, error `bad_conflicts`) refuse anything else. Use it when two mashups write the same files on
+  the same game (the same BepInEx or RED4ext copy, a `dinput8.dll` proxy that loads into every start of the game, the
+  same ASI files): installed together, each snapshot holds the other's files and restoring one breaks the other.
+  - Symmetric: the engine (`Engine::conflict`, before any download) refuses to install A while B is installed when A's
+    `conflicts` names B **or** B's recipe named A at install time (`installed.json` keeps each entry's `conflicts`).
+    Re-installing the same id is never a conflict. So naming the pair on one side is enough: a new recipe names the
+    older, already published one, and the older recipe needs no republish.
+  - The refusal is the typed error `conflict` (`{ id, name, with, withName }`, message `<name> cannot be installed
+    while <withName> is installed: ... Restore <withName> first`). The app offers "Restore <withName> first" in one
+    click: Restore vanilla on the other (asking first if its game files changed since its install), then the install.
+  - The catalog card carries `conflicts`: the ids the recipe names plus every card that names it (`linkConflicts`),
+    sorted, absent when none. The app shows them on the detail page ("Not together with") and checks them before it
+    downloads the recipe; the engine checks again with what the installed recipes named.
 - `server` (optional): the recipe can run on a free hosted server (section 9.5). `{ game: "minecraft", mc,
   loader: "fabric@<x>", ram_gb (1-8, default 2), max_players (2-10), pack, load_on_server? }`. `pack` is the file name
   (`src`) of the recipe's own Minecraft `mrpack` step, `mc` / `loader` must equal the Minecraft game's. The server
@@ -178,7 +265,7 @@ Root placeholders (destinations and launch args):
 
 | Placeholder | Folder | Undo |
 |---|---|---|
-| `{app}` | this mashup's own folder for that game: `<SIGF_HOME>/profiles/<slug of id>/<game>` (`SIGF_HOME` defaults to `%LOCALAPPDATA%\SIGF`) | deleted on restore |
+| `{app}` | this mashup's own folder for that game: `<SIGF_HOME>/profiles/<slug of id>/<game>` (`SIGF_HOME` defaults to `%LOCALAPPDATA%\SIGF` on Windows, `~/Library/Application Support/SIGF` on macOS) | deleted on restore |
 | `{game}` | the game's install folder from the scan (`gameDirs[<game>]`) | snapshot |
 | `{docs}` | the player's Documents folder | snapshot |
 | `{fivem}` | the player's FiveM server data folder, the one holding `resources/` (`gameDirs["fivem"]`) | snapshot |
@@ -327,7 +414,8 @@ The app fetches recipes only from `https://sigf.ai/` (the catalog's `recipeUrl` 
 ## 5. Catalog API (sigf.ai, `/api/app/*`)
 
 - `GET /api/app/catalog?games=gta5,minecraft,skyrim` → cards: id, name, kind, games, cover, clip, built_by, downloads,
-  rating.
+  rating, `platforms` (section 4: `["windows"]` or `["windows", "macos"]`), `conflicts` (section 4, both ways, absent
+  when none). `&platform=macos` keeps only the cards that run there.
 - `GET /api/app/recipe/:id@:version` → the `mashup.json`.
 - `GET /api/app/games` → canonical game ids, store ids per store, art.
 - `GET /api/studio/agents` → the SIGF studios shown in the app.

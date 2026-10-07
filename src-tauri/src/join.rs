@@ -249,7 +249,12 @@ impl JoinError {
 impl From<crate::install::InstallError> for JoinError {
     fn from(e: crate::install::InstallError) -> Self {
         let kind = serde_json::to_value(&e).ok().and_then(|v| v.get("kind").and_then(|k| k.as_str()).map(String::from));
-        Self { kind: kind.unwrap_or_else(|| "install".into()), message: e.to_string() }
+        // A join error has no `page` of its own: a missing prerequisite's goes in the text (as `PlayError` shows it).
+        let message = match &e {
+            crate::install::InstallError::MissingFile { message, page, .. } => format!("{message}: {page}"),
+            e => e.to_string(),
+        };
+        Self { kind: kind.unwrap_or_else(|| "install".into()), message }
     }
 }
 

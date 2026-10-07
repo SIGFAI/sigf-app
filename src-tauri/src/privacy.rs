@@ -26,12 +26,15 @@ pub struct Privacy {
     /// The ids of the games you own sent with lobby lists (else the app filters the full public list itself).
     pub lobby_games: bool,
     pub lan_address: LanShare,
+    /// The UI language the player picked (`en`, `zh-CN`, ...); absent: the system's. Only the UI reads it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub language: Option<String>,
 }
 
 impl Default for Privacy {
     /// Features on, LAN address asked for, and nothing answered yet.
     fn default() -> Self {
-        Privacy { asked: false, store_art: true, art_search: true, lobby_games: true, lan_address: LanShare::Ask }
+        Privacy { asked: false, store_art: true, art_search: true, lobby_games: true, lan_address: LanShare::Ask, language: None }
     }
 }
 
@@ -111,7 +114,7 @@ mod tests {
     fn reads_the_installer_file_and_partial_files() {
         // What windows/hooks.nsh writes.
         let p: Privacy = serde_json::from_str(r#"{"asked":true,"storeArt":false,"artSearch":false,"lobbyGames":false,"lanAddress":"ask"}"#).unwrap();
-        assert_eq!(p, Privacy { asked: true, store_art: false, art_search: false, lobby_games: false, lan_address: LanShare::Ask });
+        assert_eq!(p, Privacy { asked: true, store_art: false, art_search: false, lobby_games: false, lan_address: LanShare::Ask, language: None });
         let p: Privacy = serde_json::from_str(r#"{"asked":true,"lanAddress":"auto"}"#).unwrap();
         assert!(p.asked && p.store_art && p.art_search && p.lobby_games);
         assert_eq!(p.lan_address, LanShare::Auto);
@@ -122,7 +125,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("sub").join("privacy.json");
         assert_eq!(load(&path), Privacy::default());
-        let p = Privacy { asked: true, store_art: false, art_search: true, lobby_games: false, lan_address: LanShare::Auto };
+        let p = Privacy { asked: true, store_art: false, art_search: true, lobby_games: false, lan_address: LanShare::Auto, language: Some("zh-CN".into()) };
         save(&path, &p).unwrap();
         assert_eq!(load(&path), p);
         std::fs::write(&path, b"{not json").unwrap();
@@ -167,7 +170,7 @@ mod tests {
         let json = line.split('\'').nth(1).expect("quoted JSON");
         for (answer, on) in [("true", true), ("false", false)] {
             let p: Privacy = serde_json::from_str(&json.replace("$R7", answer)).unwrap();
-            assert_eq!(p, Privacy { asked: false, store_art: on, art_search: on, lobby_games: on, lan_address: LanShare::Ask });
+            assert_eq!(p, Privacy { asked: false, store_art: on, art_search: on, lobby_games: on, lan_address: LanShare::Ask, language: None });
         }
     }
 

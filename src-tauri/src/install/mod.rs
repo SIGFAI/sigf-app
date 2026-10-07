@@ -1,6 +1,7 @@
 //! Install engine: recipe -> verified downloads -> one strategy per game -> registry entry that knows how to undo it.
 //! Contract: docs/RECIPE-FORMAT.md sections 1, 3, 4. Everything lives under one base dir (`SIGF_HOME`, default
-//! `%LOCALAPPDATA%\SIGF`): `cache/`, `profiles/`, `snapshots/`, `installed.json`.
+//! `%LOCALAPPDATA%\SIGF` on Windows, `~/Library/Application Support/SIGF` on macOS): `cache/`, `profiles/`,
+//! `snapshots/`, `installed.json`.
 
 pub mod build;
 pub mod byo;
@@ -8,6 +9,7 @@ pub mod check;
 pub mod fetch;
 pub mod mrpack;
 pub mod paths;
+pub mod platform;
 pub mod recipe;
 pub mod registry;
 pub mod snapshot;
@@ -15,7 +17,7 @@ pub mod tools;
 
 pub use mrpack::Prism;
 pub use recipe::{Recipe, Strategy};
-pub use registry::{InstalledGame, InstalledMod, LaunchExe};
+pub use registry::{InstalledGame, InstalledMod, LaunchExe, Me3Launch, RequiredAt};
 
 use paths::{ensure_real_parent_inside, path_string, resolve_inside, Root};
 use serde::Serialize;
@@ -55,6 +57,14 @@ pub enum InstallError {
     /// A player build failed; `log` is the saved build log.
     #[error("building {label} failed: {message}")]
     BuildFailed { id: String, label: String, message: String, log: Option<String> },
+    /// Another installed mashup writes the same files on the same game (either recipe's `conflicts` names the other):
+    /// restore `with` first.
+    #[error("{name} cannot be installed while {with_name} is installed: they change the same game files. Restore {with_name} first")]
+    Conflict { id: String, name: String, with: String, with_name: String },
+    /// A file the recipe's `requires_files` names is not in the game folder: the player installs that prerequisite
+    /// first (`message`, `page`).
+    #[error("{message}")]
+    MissingFile { id: String, game: String, path: String, message: String, page: String },
 }
 
 impl InstallError {
@@ -99,19 +109,36 @@ pub struct Progress {
     pub pct: u8,
 }
 
-/// `SIGF_HOME`, else `%LOCALAPPDATA%\SIGF`.
+/// `SIGF_HOME`, else `SIGF` in the per-user data folder (`user_data_dir`): `%LOCALAPPDATA%\SIGF` on Windows,
+/// `~/Library/Application Support/SIGF` on macOS.
 pub fn home_dir() -> PathBuf {
     if let Some(h) = std::env::var_os("SIGF_HOME").filter(|h| !h.is_empty()) {
         return PathBuf::from(h);
     }
-    std::env::var_os("LOCALAPPDATA").map(PathBuf::from).unwrap_or_else(std::env::temp_dir).join("SIGF")
+    user_data_dir().unwrap_or_else(std::env::temp_dir).join("SIGF")
 }
-/// The player's Documents folder (`{docs}`): `%USERPROFILE%\Documents`, else `$HOME/Documents`.
+
+/// The player's home folder: `%USERPROFILE%` on Windows, `$HOME` elsewhere (either one as a fallback).
+pub fn user_home() -> Option<PathBuf> {
+    let (first, second) = if cfg!(windows) { ("USERPROFILE", "HOME") } else { ("HOME", "USERPROFILE") };
+    std::env::var_os(first).or_else(|| std::env::var_os(second)).filter(|h| !h.is_empty()).map(PathBuf::from)
+}
+
+/// Where per-user app data goes: `%LOCALAPPDATA%` on Windows, `~/Library/Application Support` on macOS,
+/// `$XDG_DATA_HOME` (else `~/.local/share`) on other systems.
+pub fn user_data_dir() -> Option<PathBuf> {
+    if cfg!(windows) {
+        return std::env::var_os("LOCALAPPDATA").filter(|d| !d.is_empty()).map(PathBuf::from);
+    }
+    if cfg!(target_os = "macos") {
+        return user_home().map(|h| h.join("Library").join("Application Support"));
+    }
+    std::env::var_os("XDG_DATA_HOME").filter(|d| !d.is_empty()).map(PathBuf::from).or_else(|| user_home().map(|h| h.join(".local").join("share")))
+}
+
+/// The player's Documents folder (`{docs}`): `Documents` in the home folder (`user_home`).
 pub fn docs_dir() -> Option<PathBuf> {
-    std::env::var_os("USERPROFILE")
-        .or_else(|| std::env::var_os("HOME"))
-        .filter(|h| !h.is_empty())
-        .map(|h| PathBuf::from(h).join("Documents"))
+    user_home().map(|h| h.join("Documents"))
 }
 
 pub struct Engine {
@@ -182,6 +209,7 @@ struct StepPlan<'a> {
     launch_args: Vec<String>,
     exe: Option<LaunchExe>,
     wait: Option<String>,
+    me3: Option<Me3Launch>,
 }
 
 impl Engine {
@@ -207,6 +235,14 @@ impl Engine {
     }
     fn build_dir(&self, slug: &str) -> PathBuf {
         self.home.join("build").join(slug)
+    }
+
+    /// The installed mashup `recipe` cannot be installed next to, if any: one its `conflicts` names, or one whose recipe
+    /// named it at install (the check is symmetric). Re-installing the same id is never a conflict.
+    pub fn conflict(&self, recipe: &Recipe) -> Option<InstalledMod> {
+        self.installed()
+            .into_iter()
+            .find(|m| m.id != recipe.id && (recipe.conflicts.contains(&m.id) || m.conflicts.contains(&recipe.id)))
     }
 
     pub fn installed(&self) -> Vec<InstalledMod> {
@@ -260,7 +296,7 @@ impl Engine {
         step: &'a recipe::Step,
         game_dirs: &HashMap<String, String>,
     ) -> Result<StepPlan<'a>, InstallError> {
-        let mut plan = StepPlan { files: vec![], outside: None, launch_args: vec![], exe: None, wait: None };
+        let mut plan = StepPlan { files: vec![], outside: None, launch_args: vec![], exe: None, wait: None, me3: None };
         if step.strategy == Strategy::Mrpack {
             if self.prism.is_none() {
                 return Err(InstallError::NeedsLauncher { game: step.game.clone(), launcher: "prism".into() });
@@ -336,11 +372,117 @@ impl Engine {
                 crate::launch::parse_wait(w).ok_or_else(|| InstallError::recipe(format!("bad launch wait for {}: {w}", step.game)))?;
                 plan.wait = Some(w.clone());
             }
+            if [l.exe.is_some(), l.app_exe.is_some(), l.me3.is_some()].iter().filter(|k| **k).count() > 1 {
+                return Err(InstallError::recipe(format!("launch for {}: exe, app_exe and me3 exclude each other", step.game)));
+            }
             if let Some(x) = &l.exe {
                 plan.exe = Some(self.launch_exe(recipe, step, x, game_dirs)?);
             }
+            if let Some(x) = &l.app_exe {
+                plan.exe = Some(self.app_exe(slug, step, x)?);
+            }
+            if let Some(m) = &l.me3 {
+                if !l.args.is_empty() {
+                    return Err(InstallError::recipe(format!("launch args with me3 for {}: the app builds me3's command line", step.game)));
+                }
+                plan.me3 = Some(self.me3_launch(recipe, slug, step, m, game_dirs)?);
+            }
         }
         Ok(plan)
+    }
+
+    /// A launch step's `app_exe`: a `.exe` this step installs into `{app}` (`{app}/` prefix optional), pinned by the
+    /// sha256 the recipe gives it. `crate::launch::resolve_exe` checks both again at play.
+    fn app_exe(&self, slug: &str, step: &recipe::Step, exe: &str) -> Result<LaunchExe, InstallError> {
+        let game = &step.game;
+        let rel = exe.strip_prefix("{app}/").unwrap_or(exe);
+        if !check::launch_rel_ok(rel, ".exe") {
+            return Err(InstallError::recipe(format!("launch app_exe for {game} is not a .exe in {{app}}: {exe}")));
+        }
+        let sha = placed_sha(step, Root::App, rel)
+            .ok_or_else(|| InstallError::recipe(format!("launch app_exe for {game}: the step installs no {{app}}/{rel}")))?;
+        Ok(LaunchExe { path: rel.to_string(), dir: path_string(&self.profile_dir(slug, game)), hint: None, sha256: Some(sha), own: true })
+    }
+
+    /// A launch step's `me3`: a game me3 starts, a `.me3` profile this step installs (into `{app}` or `{game}`), and
+    /// either a `me3.exe` it installs too or none (the player's me3, found at play). Nothing else reaches me3's command
+    /// line.
+    fn me3_launch(
+        &self,
+        recipe: &Recipe,
+        slug: &str,
+        step: &recipe::Step,
+        m: &recipe::Me3Spec,
+        game_dirs: &HashMap<String, String>,
+    ) -> Result<Me3Launch, InstallError> {
+        let game = &step.game;
+        let me3_game = crate::launch::me3_game(game).ok_or_else(|| InstallError::recipe(format!("me3 does not start {game}")))?;
+        if step.strategy == Strategy::Mrpack {
+            return Err(InstallError::recipe(format!("me3 launch for {game}, which starts through Prism")));
+        }
+        let pinned = |spec: &str, ext: &str| -> Result<LaunchExe, InstallError> {
+            let (root, rest) = paths::split_root(spec)?;
+            if !matches!(root, Root::App | Root::Game) || !check::launch_rel_ok(&rest, ext) {
+                return Err(InstallError::recipe(format!("me3 {spec} for {game}: not a {ext} in {{app}} or {{game}}")));
+            }
+            let sha = placed_sha(step, root, &rest)
+                .ok_or_else(|| InstallError::recipe(format!("me3 {spec} for {game}: the step does not install it")))?;
+            let dir = self.root_dir(root, slug, game, game_dirs)?;
+            Ok(LaunchExe { path: rest, dir: path_string(&dir), hint: None, sha256: Some(sha), own: false })
+        };
+        let mut profile = pinned(&m.profile, ".me3")?;
+        profile.sha256 = None; // a profile is text the player may tune; only its place is pinned
+        let exe = match &m.exe {
+            Some(x) => {
+                let p = pinned(x, ".exe")?;
+                if !p.path.rsplit('/').next().is_some_and(|n| n.eq_ignore_ascii_case("me3.exe")) {
+                    return Err(InstallError::recipe(format!("me3 exe for {game} is not a me3.exe: {x}")));
+                }
+                Some(p)
+            }
+            None => None,
+        };
+        if m.savefile.as_deref().is_some_and(|s| !check::savefile_ok(s)) {
+            return Err(InstallError::recipe(format!("bad me3 savefile for {game}")));
+        }
+        Ok(Me3Launch {
+            game: me3_game.to_string(),
+            profile,
+            exe,
+            savefile: m.savefile.clone(),
+            disable_arxan: m.disable_arxan,
+            hint: recipe.exe_hint("me3.exe"),
+        })
+    }
+
+    /// `requires_files`: each one resolved in its game's scanned folder and present, else `MissingFile` (before any
+    /// download). Returns them for installed.json, so Play checks them again.
+    pub fn required_files(&self, recipe: &Recipe, game_dirs: &HashMap<String, String>) -> Result<Vec<RequiredAt>, InstallError> {
+        if recipe.requires_files.len() > check::REQUIRES_FILES_MAX {
+            return Err(InstallError::recipe("too many requires_files"));
+        }
+        let mut out = vec![];
+        for f in &recipe.requires_files {
+            if !recipe.games.iter().any(|g| g.game == f.game) {
+                return Err(InstallError::recipe(format!("requires_files {}: {} is not one of games[]", f.id, f.game)));
+            }
+            let rel = f
+                .path
+                .strip_prefix("{game}/")
+                .filter(|r| check::launch_rel_ok(r, ""))
+                .ok_or_else(|| InstallError::PathTraversal { dst: f.path.clone() })?;
+            let page = f.page.clone().filter(|p| check::page_ok(p)).ok_or_else(|| InstallError::recipe(format!("requires_files {}: bad page", f.id)))?;
+            if !check::message_ok(&f.message) {
+                return Err(InstallError::recipe(format!("requires_files {}: bad message", f.id)));
+            }
+            let dir = self.game_dir(game_dirs, &f.game)?;
+            let at = RequiredAt { id: f.id.clone(), path: rel.to_string(), dir: path_string(&dir), message: f.message.clone(), page: Some(page.clone()) };
+            if !crate::launch::required_present(&at) {
+                return Err(InstallError::MissingFile { id: f.id.clone(), game: f.game.clone(), path: f.path.clone(), message: f.message.clone(), page });
+            }
+            out.push(at);
+        }
+        Ok(out)
     }
 
     /// A launch step's `exe`: a `.exe` inside the scanned game folder (`{game}/` prefix optional). It may be missing
@@ -355,7 +497,7 @@ impl Engine {
         if !rel.extension().is_some_and(|e| e.eq_ignore_ascii_case("exe")) {
             return Err(InstallError::recipe(format!("launch exe for {game} is not a .exe: {exe}")));
         }
-        Ok(LaunchExe { path: paths::rel_string(&rel), dir: path_string(&dir), hint: recipe.exe_hint(exe) })
+        Ok(LaunchExe { path: paths::rel_string(&rel), dir: path_string(&dir), hint: recipe.exe_hint(exe), sha256: None, own: false })
     }
 
     /// Installs `recipe`. `game_dirs` maps canonical game id -> scanned install folder (`{game}`), plus `fivem` ->
@@ -373,6 +515,13 @@ impl Engine {
         }
         let mut rep = Reporter { id: recipe.id.clone(), last: None, sink: on_progress };
 
+        // Never next to a mashup that writes the same files: restoring one would break the other.
+        if let Some(m) = self.conflict(recipe) {
+            let name = if recipe.name.is_empty() { recipe.id.clone() } else { recipe.name.clone() };
+            let with_name = if m.name.is_empty() { m.id.clone() } else { m.name };
+            return Err(InstallError::Conflict { id: recipe.id.clone(), name, with: m.id, with_name });
+        }
+
         // Everything checkable without the network, before the first byte is downloaded.
         let mut seen_games = std::collections::HashSet::new();
         let mut plans = vec![];
@@ -382,6 +531,9 @@ impl Engine {
             }
             plans.push(self.plan_step(recipe, &slug, step, game_dirs)?);
         }
+
+        // Prerequisites the player installs (xNVSE...): present in the game folder, before any download.
+        let required = self.required_files(recipe, game_dirs)?;
 
         // Bring your own copy: every copy the recipe needs is on this PC and is a dump it accepts, before any download.
         self.check_byo(recipe)?;
@@ -450,6 +602,8 @@ impl Engine {
                     g.launch_args.extend(plan.launch_args.iter().cloned());
                     g.exe = plan.exe.clone();
                     g.wait = plan.wait.clone();
+                    g.me3 = plan.me3.clone();
+                    g.no_start = !recipe.launch.is_empty() && !recipe.launch.iter().any(|l| l.game == step.game);
                     done.push(g);
                 }
                 Err(e) => {
@@ -491,6 +645,8 @@ impl Engine {
                 .unwrap_or(0),
             games: done,
             placed,
+            conflicts: recipe.conflicts.clone(),
+            requires_files: required,
         };
         let mut all = self.installed();
         all.retain(|m| m.id != recipe.id);
@@ -597,18 +753,7 @@ impl Engine {
         let mut kept: Vec<snapshot::Planned> = outside.into_iter().rev().filter(|p| seen.insert(p.dst.to_ascii_lowercase())).collect();
         kept.reverse();
 
-        let mut g = InstalledGame {
-            game: step.game.clone(),
-            strategy: step.strategy,
-            launch_args: vec![],
-            instance: None,
-            profile_dir: has_app.then(|| path_string(&app)),
-            snapshot: None,
-            game_dir: None,
-            launcher: None,
-            exe: None,
-            wait: None,
-        };
+        let mut g = InstalledGame { profile_dir: has_app.then(|| path_string(&app)), ..InstalledGame::new(&step.game, step.strategy) };
         if let (Some((_, dir)), false) = (&plan.outside, kept.is_empty()) {
             let snap = self.snapshot_dir(slug, &step.game);
             snapshot::apply(&snap, dir, &kept)?;
@@ -630,16 +775,11 @@ impl Engine {
         let launcher = prism.exe.as_deref().map(path_string);
         match mrpack::write_instance(&prism.data_dir, slug, id, pack, &step.jvm_args, &self.cache_dir(), policy, &mut |_, _| {}) {
             Ok(w) => Ok(InstalledGame {
-                game: step.game.clone(),
-                strategy: Strategy::Mrpack,
                 launch_args: mrpack::launch_args(&w.instance),
                 instance: Some(w.instance),
                 profile_dir: Some(path_string(&w.dir)),
-                snapshot: None,
-                game_dir: None,
                 launcher,
-                exe: None,
-                wait: None,
+                ..InstalledGame::new(&step.game, Strategy::Mrpack)
             }),
             // Only a folder we could not write falls back to Prism's importer; a bad pack or hash stays an error.
             Err(InstallError::Io { path, message }) => {
@@ -651,18 +791,7 @@ impl Engine {
                 let named = dir.join(format!("{slug}.mrpack")); // Prism picks the importer by extension
                 std::fs::copy(pack, &named).map_err(|e| InstallError::io(&named, e))?;
                 mrpack::import(exe, &named)?;
-                Ok(InstalledGame {
-                    game: step.game.clone(),
-                    strategy: Strategy::Mrpack,
-                    launch_args: vec![],
-                    instance: None,
-                    profile_dir: None,
-                    snapshot: None,
-                    game_dir: None,
-                    launcher,
-                    exe: None,
-                    wait: None,
-                })
+                Ok(InstalledGame { launcher, ..InstalledGame::new(&step.game, Strategy::Mrpack) })
             }
             Err(e) => Err(e),
         }
@@ -851,35 +980,19 @@ impl Engine {
     /// Snapshots/instances left by an install that crashed before writing its registry entry.
     fn orphans(&self, id: &str, slug: &str) -> Vec<InstalledGame> {
         let mut out = vec![];
-        let blank = |strategy| InstalledGame {
-            game: String::new(),
-            strategy,
-            launch_args: vec![],
-            instance: None,
-            profile_dir: None,
-            snapshot: None,
-            game_dir: None,
-            launcher: None,
-            exe: None,
-            wait: None,
-        };
         if let Ok(rd) = std::fs::read_dir(self.home.join("snapshots").join(slug)) {
             for e in rd.flatten().filter(|e| e.path().join("manifest.json").exists()) {
-                out.push(InstalledGame {
-                    game: e.file_name().to_string_lossy().into_owned(),
-                    snapshot: Some(path_string(&e.path())),
-                    ..blank(Strategy::GameDirSnapshot)
-                });
+                out.push(InstalledGame { snapshot: Some(path_string(&e.path())), ..InstalledGame::new(e.file_name().to_string_lossy(), Strategy::GameDirSnapshot) });
             }
         }
         if let Some(p) = &self.prism {
             let dir = p.data_dir.join("instances").join(slug);
             if mrpack::owner(&dir).as_deref() == Some(id) {
-                out.push(InstalledGame { game: "minecraft".into(), profile_dir: Some(path_string(&dir)), ..blank(Strategy::Mrpack) });
+                out.push(InstalledGame { profile_dir: Some(path_string(&dir)), ..InstalledGame::new("minecraft", Strategy::Mrpack) });
             }
         }
         if self.home.join("profiles").join(slug).exists() {
-            out.push(InstalledGame { profile_dir: Some(path_string(&self.home.join("profiles").join(slug))), ..blank(Strategy::Profile) });
+            out.push(InstalledGame { profile_dir: Some(path_string(&self.home.join("profiles").join(slug))), ..InstalledGame::new("", Strategy::Profile) });
         }
         out
     }
@@ -966,6 +1079,39 @@ fn verify_contents(f: &recipe::FileSpec, got: &[Extracted]) -> Result<(), Instal
         return Err(InstallError::recipe(format!("{} holds {}, not in its contents", f.src, extra.rel)));
     }
     Ok(())
+}
+
+/// The sha256 of the file `step` installs at `<root>/<rel>`: a plain file whose `dst` is that path, or an entry of an
+/// unpacked zip's `contents` that lands there (its `root` stripped). A later file wins, as at install. Case-insensitive,
+/// like Windows paths.
+pub fn placed_sha(step: &recipe::Step, root: Root, rel: &str) -> Option<String> {
+    let rel = rel.replace('\\', "/");
+    for f in step.files.iter().rev() {
+        let Ok((r, rest)) = paths::split_root(&f.target()) else { continue };
+        if r != root {
+            continue;
+        }
+        if !f.unpack {
+            if rest.eq_ignore_ascii_case(&rel) {
+                return Some(f.sha256.to_ascii_lowercase());
+            }
+            continue;
+        }
+        for c in f.contents.iter().rev() {
+            let path = c.path.replace('\\', "/");
+            let placed = match &f.root {
+                Some(zr) => match under_root(&path, zr) {
+                    Some(p) => p,
+                    None => continue,
+                },
+                None => &path,
+            };
+            if join_rel(&rest, placed).eq_ignore_ascii_case(&rel) {
+                return Some(c.sha256.to_ascii_lowercase());
+            }
+        }
+    }
+    None
 }
 
 /// `rel` with the zip folder `root` stripped, when `rel` is a file under it (`root/...`), else None.

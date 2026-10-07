@@ -18,6 +18,7 @@ env:
   RUST_VERSION: 1.99.0   # keep equal to rust-toolchain.toml
   NODE_VERSION: 22.12.0  # keep equal to .nvmrc
   SIGNED: ${{ vars.SIGNPATH_ENABLED == 'true' }}
+  MAC_SIGNED: ${{ vars.APPLE_SIGNING_ENABLED == 'true' }}
 
 jobs:
   windows:
@@ -144,7 +145,7 @@ jobs:
           parameters: |
             version: "${{ env.VERSION }}"
 
-      # ---- 5. Checksums, build info, provenance, release ----
+      # ---- 5. The final installer, its updater signature, build info ----
       - name: Collect the installer
         run: |
           if [ "$SIGNED" = true ]; then
@@ -154,35 +155,158 @@ jobs:
           fi
           # Players get one file with a plain name; the bare app exe (reproducibility target) stays a workflow artifact.
 
-      - name: Updater signature and latest.json (over the final installer)
+      - name: Updater signature (over the final installer)
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
           [ -n "$TAURI_SIGNING_PRIVATE_KEY" ] || { echo "::error::repo secret TAURI_SIGNING_PRIVATE_KEY is missing"; exit 1; }
-          EXE="SIGF-Setup-${VERSION}.exe"
           # --app-version binds the signature to this version (the app sets requireSignedVersion).
-          npx tauri signer sign --app-version "$VERSION" "out/$EXE" > /dev/null
-          test -s "out/$EXE.sig"
-          EXE="$EXE" node -e '
-            const fs = require("fs");
-            const { VERSION, EXE, GITHUB_REPOSITORY, GITHUB_REF_NAME } = process.env;
-            const url = `https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}/${EXE}`;
-            const signature = fs.readFileSync(`out/${EXE}.sig`, "utf8").trim();
-            const notes = `SIGF ${VERSION}: https://github.com/${GITHUB_REPOSITORY}/releases/tag/${GITHUB_REF_NAME}`;
-            const manifest = { version: VERSION, notes, pub_date: new Date().toISOString().replace(/\.\d+Z$/, "Z"),
-              platforms: { "windows-x86_64": { signature, url } } };
-            fs.writeFileSync("out/latest.json", JSON.stringify(manifest, null, 2) + "\n");'
-          cat out/latest.json
-
-      - name: Build info and SHA256SUMS
-        run: |
+          npx tauri signer sign --app-version "$VERSION" "out/SIGF-Setup-${VERSION}.exe" > /dev/null
+          test -s "out/SIGF-Setup-${VERSION}.exe.sig"
           {
-            echo "tag: $GITHUB_REF_NAME"; echo "commit: $GITHUB_SHA"; echo "runner: $ImageOS $ImageVersion"
-            echo "signed: $SIGNED"; rustc -Vv; echo "node $(node -v)"; echo "SOURCE_DATE_EPOCH=$SOURCE_DATE_EPOCH"
-          } > "$GITHUB_WORKSPACE/out/BUILDINFO.txt"
-          cd "$GITHUB_WORKSPACE/out"
-          sha256sum *.exe *.exe.sig latest.json BUILDINFO.txt > SHA256SUMS
+            echo "[windows]"; echo "runner: $ImageOS $ImageVersion"; echo "signed: $SIGNED"; rustc -Vv; echo "node $(node -v)"
+          } > out/BUILDINFO-windows.txt
+
+      - name: Hand the Windows files to the release job
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-windows
+          path: out/
+          if-no-files-found: error
+
+      - name: Keep the unsigned exe (reproducibility target)
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: repro-windows
+          path: repro/
+          if-no-files-found: error
+
+  macos:
+    # One universal app (Apple Silicon + Intel). Signing with a Developer ID and notarization run only when
+    # APPLE_SIGNING_ENABLED is true; until then the app is ad-hoc signed (tauri.conf.json bundle.macOS.signingIdentity
+    # "-": no certificate, no name) and macOS Gatekeeper asks the player to allow it once (see "macOS signing" below).
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: App version from the tag
+        run: |
+          V="${GITHUB_REF_NAME#v}"; V="${V%%-*}"   # a pre-release tag (v1.2.3-rc.1) builds version 1.2.3
+          [ "$(node -p "require('./package.json').version")" = "$V" ] || { echo "package.json version != tag"; exit 1; }
+          echo "VERSION=$V" >> "$GITHUB_ENV"
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable branch, 2026-10-05
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - name: Reproducibility settings
+        run: |
+          echo "SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)" >> "$GITHUB_ENV"
+          echo "RUSTFLAGS=--remap-path-prefix=$GITHUB_WORKSPACE=/build --remap-path-prefix=$HOME/.cargo=/cargo" >> "$GITHUB_ENV"
+          echo "CARGO_INCREMENTAL=0" >> "$GITHUB_ENV"
+
+      - name: Install JS dependencies and build the UI
+        run: npm ci && npm run build
+
+      - name: Test (Apple Silicon)
+        run: cargo test --locked --manifest-path src-tauri/Cargo.toml
+
+      - name: Notarization key (signed releases only)
+        if: env.MAC_SIGNED == 'true'
+        env:
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+        run: |
+          [ -n "$APPLE_API_KEY_P8" ] || { echo "::error::repo secret APPLE_API_KEY_P8 is missing"; exit 1; }
+          printf '%s' "$APPLE_API_KEY_P8" > "$RUNNER_TEMP/notary.p8"
+          echo "APPLE_API_KEY_PATH=$RUNNER_TEMP/notary.p8" >> "$GITHUB_ENV"
+
+      - name: Build the universal .app and .dmg
+        env:
+          # Read by the Tauri bundler only when set: it imports the certificate into a temporary keychain, signs with
+          # the identity (hardened runtime) and notarizes with the App Store Connect API key, then staples the ticket.
+          APPLE_CERTIFICATE: ${{ env.MAC_SIGNED == 'true' && secrets.APPLE_CERTIFICATE || '' }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ env.MAC_SIGNED == 'true' && secrets.APPLE_CERTIFICATE_PASSWORD || '' }}
+          APPLE_SIGNING_IDENTITY: ${{ env.MAC_SIGNED == 'true' && vars.APPLE_SIGNING_IDENTITY || '' }}
+          APPLE_API_ISSUER: ${{ env.MAC_SIGNED == 'true' && secrets.APPLE_API_ISSUER || '' }}
+          APPLE_API_KEY: ${{ env.MAC_SIGNED == 'true' && secrets.APPLE_API_KEY || '' }}
+        run: |
+          # createUpdaterArtifacts off: the updater archive is made and signed over the final (stapled) app below.
+          CONFIG='{"bundle":{"createUpdaterArtifacts":false}}'
+          if [ "$MAC_SIGNED" = true ]; then
+            [ -n "$APPLE_SIGNING_IDENTITY" ] || { echo "::error::repo variable APPLE_SIGNING_IDENTITY is missing"; exit 1; }
+            CONFIG=$(node -e 'console.log(JSON.stringify({bundle:{createUpdaterArtifacts:false,macOS:{signingIdentity:process.env.APPLE_SIGNING_IDENTITY}}}))')
+          else
+            # Set but empty still makes the bundler try to import a certificate: unset them for the ad-hoc build.
+            unset APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_API_ISSUER APPLE_API_KEY
+          fi
+          npx tauri build --ci --target universal-apple-darwin --bundles app,dmg --config "$CONFIG" -- --locked
+
+      - name: Collect the .dmg and the updater archive
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          [ -n "$TAURI_SIGNING_PRIVATE_KEY" ] || { echo "::error::repo secret TAURI_SIGNING_PRIVATE_KEY is missing"; exit 1; }
+          B=src-tauri/target/universal-apple-darwin/release/bundle
+          mkdir -p out
+          cp "$B/dmg/SIGF_${VERSION}_universal.dmg" "out/SIGF-${VERSION}-mac.dmg"
+          # The updater replaces SIGF.app with the app inside this archive (Tauri's .app.tar.gz format).
+          COPYFILE_DISABLE=1 tar -czf "out/SIGF-${VERSION}-mac.app.tar.gz" -C "$B/macos" SIGF.app
+          npx tauri signer sign --app-version "$VERSION" "out/SIGF-${VERSION}-mac.app.tar.gz" > /dev/null
+          test -s "out/SIGF-${VERSION}-mac.app.tar.gz.sig"
+          codesign -dv "$B/macos/SIGF.app" 2>&1 | grep -E '^(Authority|Signature|TeamIdentifier)=' || true
+          {
+            echo "[macos]"; echo "runner: $ImageOS $ImageVersion"; echo "developer id signed and notarized: $MAC_SIGNED"
+            rustc -Vv; echo "node $(node -v)"; sw_vers; xcodebuild -version
+          } > out/BUILDINFO-macos.txt
+
+      - name: Hand the macOS files to the release job
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-macos
+          path: out/
+          if-no-files-found: error
+
+  release:
+    needs: [windows, macos]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: release-*
+          path: out
+          merge-multiple: true
+
+      - name: latest.json, build info and SHA256SUMS
+        run: |
+          V="${GITHUB_REF_NAME#v}"; V="${V%%-*}"
+          cd out
+          # windows-x86_64: the key the updater falls back to when the exe carries no bundle type (--no-binary-patching).
+          # darwin-aarch64 and darwin-x86_64: the same universal app for both Mac architectures.
+          V="$V" node -e '
+            const fs = require("fs");
+            const { V, GITHUB_REPOSITORY, GITHUB_REF_NAME } = process.env;
+            const at = (f) => ({ signature: fs.readFileSync(`${f}.sig`, "utf8").trim(),
+              url: `https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}/${f}` });
+            const mac = at(`SIGF-${V}-mac.app.tar.gz`);
+            const notes = `SIGF ${V}: https://github.com/${GITHUB_REPOSITORY}/releases/tag/${GITHUB_REF_NAME}`;
+            const manifest = { version: V, notes, pub_date: new Date().toISOString().replace(/\.\d+Z$/, "Z"),
+              platforms: { "windows-x86_64": at(`SIGF-Setup-${V}.exe`), "darwin-aarch64": mac, "darwin-x86_64": mac } };
+            fs.writeFileSync("latest.json", JSON.stringify(manifest, null, 2) + "\n");'
+          cat latest.json
+          { echo "tag: $GITHUB_REF_NAME"; echo "commit: $GITHUB_SHA"; echo; cat BUILDINFO-windows.txt; echo; cat BUILDINFO-macos.txt; } > BUILDINFO.txt
+          rm BUILDINFO-windows.txt BUILDINFO-macos.txt
+          sha256sum *.exe *.dmg *.app.tar.gz *.sig latest.json BUILDINFO.txt > SHA256SUMS
           cat SHA256SUMS
 
       - name: Attest build provenance
@@ -191,18 +315,11 @@ jobs:
         with:
           subject-path: |
             out/*.exe
-            out/*.exe.sig
+            out/*.dmg
+            out/*.app.tar.gz
+            out/*.sig
             out/latest.json
             out/SHA256SUMS
-
-      - name: Keep build outputs as a workflow artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: sigf-${{ github.ref_name }}
-          path: |
-            out/
-            repro/
-          if-no-files-found: error
 
       - name: Keep the built files as a workflow artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -219,5 +336,5 @@ jobs:
           PRE=""; case "$GITHUB_REF_NAME" in *-*) PRE="--prerelease";; esac
           gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --verify-tag $PRE \
             --title "SIGF $GITHUB_REF_NAME" \
-            --notes "Verify: \`gh attestation verify <file> --repo $GITHUB_REPOSITORY\` and compare SHA256SUMS. [Code signing policy](https://github.com/$GITHUB_REPOSITORY/blob/main/CODE-SIGNING-POLICY.md)" \
-            *.exe *.exe.sig latest.json SHA256SUMS BUILDINFO.txt
+            --notes "Windows: SIGF-Setup-*.exe. macOS 11 or later (Apple Silicon and Intel): SIGF-*-mac.dmg. Verify: \`gh attestation verify <file> --repo $GITHUB_REPOSITORY\` and compare SHA256SUMS. [Code signing policy](https://github.com/$GITHUB_REPOSITORY/blob/main/CODE-SIGNING-POLICY.md)" \
+            *.exe *.dmg *.app.tar.gz *.sig latest.json SHA256SUMS BUILDINFO.txt

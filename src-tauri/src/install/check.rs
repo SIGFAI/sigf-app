@@ -140,13 +140,26 @@ fn upstream_name_ok(s: &str) -> bool {
     !s.is_empty() && s.len() <= 200 && !s.contains("..") && s.bytes().all(|b| b.is_ascii_alphanumeric() || b"._+-".contains(&b))
 }
 
+/// Most mashups a recipe's `conflicts` may name.
+pub const CONFLICTS_MAX: usize = 16;
+
+/// `conflicts`: 1 to `CONFLICTS_MAX` distinct mashup ids (`sigf/<repo name>`), never the recipe's own. The ids need not
+/// be published (yet). Same rule as the catalog's `conflictsOk`.
+pub fn conflicts_ok(v: &Value, own_id: &str) -> bool {
+    v.as_array().is_some_and(|a| {
+        (1..=CONFLICTS_MAX).contains(&a.len())
+            && a.iter().all(|c| c.as_str().is_some_and(|c| c != own_id && c.strip_prefix("sigf/").is_some_and(repo_name_ok)))
+            && a.iter().enumerate().all(|(i, c)| !a[..i].contains(c))
+    })
+}
+
 /// A GitHub repo name: `[A-Za-z0-9._-]{1,100}`, not `.`-led, not `.git`.
-fn repo_name_ok(s: &str) -> bool {
+pub(crate) fn repo_name_ok(s: &str) -> bool {
     !s.is_empty() && s.len() <= 100 && !s.starts_with('.') && !s.ends_with(".git") && s.bytes().all(|b| b.is_ascii_alphanumeric() || b"._-".contains(&b))
 }
 
 /// `https://github.com/<owner>/<repo>` (the server's `REPO_RE`).
-fn repo_url_ok(s: &str) -> bool {
+pub(crate) fn repo_url_ok(s: &str) -> bool {
     let Some(rest) = s.strip_prefix("https://github.com/") else { return false };
     let Some((owner, name)) = rest.split_once('/') else { return false };
     !owner.is_empty() && owner.len() <= 39 && owner.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-') && !name.is_empty() && name.len() <= 100
@@ -275,6 +288,15 @@ const ROOTS: &[&str] = &["{app}", "{game}", "{docs}", "{fivem}"];
 fn game_ok(v: &Value) -> bool {
     v.as_str().is_some_and(|s| !s.is_empty() && s.len() <= 40 && s.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-'))
 }
+/// `platforms`: 1 to 4 distinct ids of `[a-z0-9-]{1,20}`. Ids the app does not know (`linux`) are allowed and ignored
+/// (`install::platform::platforms`), so a newer recipe still installs where it can.
+fn platforms_ok(v: &Value) -> bool {
+    v.as_array().is_some_and(|a| {
+        (1..=4).contains(&a.len())
+            && a.iter().all(|p| p.as_str().is_some_and(|s| !s.is_empty() && s.len() <= 20 && s.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')))
+            && a.iter().enumerate().all(|(i, p)| !a[..i].contains(p))
+    })
+}
 fn sha_ok(v: &Value) -> bool {
     v.as_str().is_some_and(|s| s.len() == 64 && s.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')))
 }
@@ -324,6 +346,72 @@ fn exe_ok(exe: &str) -> bool {
     }
     let rest = exe.strip_prefix("{game}/").unwrap_or(exe);
     rest.to_ascii_lowercase().ends_with(".exe") && plain_segments(rest)
+}
+
+/// A path a launch or prerequisite names inside its folder (after its `{app}/` or `{game}/` prefix): plain relative
+/// segments, at most 200 chars, ending in `ext` (case-insensitive) when `ext` is given. Same rule as the catalog's
+/// `launchRelOk`.
+pub fn launch_rel_ok(rel: &str, ext: &str) -> bool {
+    let name = rel.rsplit('/').next().unwrap_or(rel);
+    rel.chars().count() <= 200 && plain_segments(rel) && (ext.is_empty() || (name.len() > ext.len() && name.to_ascii_lowercase().ends_with(ext)))
+}
+
+/// me3's `--savefile`: a plain `.sl2` file name, `[A-Za-z0-9._-]{1,64}`, not dot-led, no `..`.
+pub fn savefile_ok(s: &str) -> bool {
+    (5..=64).contains(&s.len())
+        && !s.starts_with('.')
+        && !s.contains("..")
+        && s.bytes().all(|b| b.is_ascii_alphanumeric() || b"._-".contains(&b))
+        && s.to_ascii_lowercase().ends_with(".sl2")
+}
+
+/// A page the app may open for the player (`requires_files[].page`): a plain https URL (`canonical_https`: no user,
+/// port, query, fragment or dot segment; no quote, `<`, `>` or `@`), at most 300 chars. Same rule as the catalog's `pageOk`.
+pub fn page_ok(p: &str) -> bool {
+    p.len() <= 300 && !p.contains(['"', '<', '>', '@']) && canonical_https(p).is_some_and(|u| u.host_str().is_some_and(|h| h.contains('.')))
+}
+
+/// What the player reads for a missing prerequisite: 1 to 120 chars, no control character.
+pub fn message_ok(m: &str) -> bool {
+    !m.trim().is_empty() && m.chars().count() <= 120 && !m.chars().any(char::is_control)
+}
+
+/// Most `requires_files` entries a recipe may list.
+pub const REQUIRES_FILES_MAX: usize = 8;
+
+/// `requires_files` (docs/RECIPE-FORMAT.md section 4): 1 to `REQUIRES_FILES_MAX` of `{ id, game, path, message, page }`,
+/// `game` one of `games[]`, `path` `{game}/<plain segments>`. Same rule as the catalog's `requiresFilesOk`.
+pub fn requires_files_ok(v: &Value, games: &[&str]) -> bool {
+    v.as_array().is_some_and(|a| {
+        (1..=REQUIRES_FILES_MAX).contains(&a.len())
+            && a.iter().all(|f| {
+                f.as_object().is_some_and(|f| {
+                    game_ok(f.get("id").unwrap_or(&Value::Null))
+                        && f.get("game").and_then(Value::as_str).is_some_and(|g| games.contains(&g))
+                        && f.get("path").and_then(Value::as_str).and_then(|p| p.strip_prefix("{game}/")).is_some_and(|r| launch_rel_ok(r, ""))
+                        && f.get("message").and_then(Value::as_str).is_some_and(message_ok)
+                        && f.get("page").and_then(Value::as_str).is_some_and(page_ok)
+                })
+            })
+    })
+}
+
+/// `{app}/<rel>` or `{game}/<rel>` ending in `ext`: a file the launch takes from the mashup's own folder or the game's.
+fn app_or_game_ok(v: &Value, ext: &str) -> bool {
+    v.as_str().is_some_and(|s| {
+        let rest = s.strip_prefix("{app}/").or_else(|| s.strip_prefix("{game}/"));
+        rest.is_some_and(|r| launch_rel_ok(r, ext))
+    })
+}
+
+/// `launch[].me3` (docs/RECIPE-FORMAT.md section 4, "me3 launch"): `profile` a `.me3` in `{app}` or `{game}`, `exe`
+/// (optional) a `me3.exe` there, `savefile` (optional) a `.sl2` name, `disable_arxan` (optional) a boolean.
+fn me3_ok(v: &Value) -> bool {
+    let Some(m) = v.as_object() else { return false };
+    app_or_game_ok(m.get("profile").unwrap_or(&Value::Null), ".me3")
+        && m.get("exe").is_none_or(|x| app_or_game_ok(x, ".exe") && x.as_str().is_some_and(|x| x.to_ascii_lowercase().ends_with("/me3.exe")))
+        && m.get("savefile").is_none_or(|x| x.as_str().is_some_and(savefile_ok))
+        && m.get("disable_arxan").is_none_or(Value::is_boolean)
 }
 
 /// An install file the app can place: `dst`, `unpack`, `contents`, `root` (see the server's `placeable`).
@@ -469,7 +557,14 @@ pub fn check_recipe(text: &str, allow_local: bool) -> Result<Recipe, InstallErro
                 Some(w) => w.as_str().and_then(|w| w.strip_prefix("port:")).is_some_and(|p| !p.is_empty() && p.len() <= 5 && p.bytes().all(|b| b.is_ascii_digit())),
             };
             let exe_good = l.get("exe").is_none_or(|x| x.as_str().is_some_and(exe_ok));
-            if !game_ok(l.get("game").unwrap_or(&Value::Null)) || !args_ok || !wait_ok || !exe_good {
+            let app_exe_good = l.get("app_exe").is_none_or(|x| x.as_str().is_some_and(|x| launch_rel_ok(x.strip_prefix("{app}/").unwrap_or(x), ".exe")));
+            let me3_good = l.get("me3").is_none_or(|m| {
+                me3_ok(m)
+                    && l.get("game").and_then(Value::as_str).and_then(crate::launch::me3_game).is_some()
+                    && l.get("args").is_none_or(|a| a.as_array().is_some_and(Vec::is_empty))
+            });
+            let kinds = ["exe", "app_exe", "me3"].iter().filter(|k| l.contains_key(**k)).count();
+            if !game_ok(l.get("game").unwrap_or(&Value::Null)) || !args_ok || !wait_ok || !exe_good || !app_exe_good || !me3_good || kinds > 1 {
                 return Err(bad("bad launch"));
             }
         }
@@ -498,7 +593,58 @@ pub fn check_recipe(text: &str, allow_local: bool) -> Result<Recipe, InstallErro
     if r.get("media").is_some_and(|m| !m.is_object()) {
         return Err(bad("bad media"));
     }
+    if r.get("platforms").is_some_and(|p| !platforms_ok(p)) {
+        return Err(bad("bad platforms"));
+    }
+    if r.get("conflicts").is_some_and(|c| !conflicts_ok(c, id)) {
+        return Err(bad("bad conflicts"));
+    }
+    if r.get("community").is_some_and(|c| !community_ok(c, &recipe, &hosted)) {
+        return Err(bad("bad community"));
+    }
+    if r.get("requires_files").is_some_and(|f| !requires_files_ok(f, &game_ids)) {
+        return Err(bad("bad requires_files"));
+    }
+    launch_files_installed(&recipe)?;
     Ok(recipe)
+}
+
+/// `community: true` (a mashup submitted on sigf.ai/submit): only `true`, only on an upstream fusion, credited to the
+/// GitHub owner of `source.repo` (`built_by.author`, case aside). Display only (the card's "Community · by"); same rule
+/// as the SIGF catalog (`communityOk`).
+fn community_ok(v: &Value, r: &Recipe, hosted: &str) -> bool {
+    if v != &Value::Bool(true) || !upstream_fusion(r, hosted) {
+        return false;
+    }
+    let owner = r.source.as_ref().and_then(|s| s.repo.as_deref()).and_then(|u| u.strip_prefix("https://github.com/")).and_then(|p| p.split('/').next());
+    let author = r.built_by.as_ref().and_then(|b| b.author.as_deref());
+    matches!((owner, author), (Some(o), Some(a)) if o.eq_ignore_ascii_case(a))
+}
+
+/// Every file a launch takes from `{app}` or `{game}` (`app_exe`, me3's `profile` and `exe`) is one its game's install
+/// step places, with a sha256: the app never starts a program the recipe did not pin.
+fn launch_files_installed(r: &Recipe) -> Result<(), InstallError> {
+    for l in &r.launch {
+        let mut wanted: Vec<String> = vec![];
+        if let Some(x) = &l.app_exe {
+            wanted.push(format!("{{app}}/{}", x.strip_prefix("{app}/").unwrap_or(x)));
+        }
+        if let Some(m) = &l.me3 {
+            wanted.push(m.profile.clone());
+            wanted.extend(m.exe.clone());
+        }
+        if wanted.is_empty() {
+            continue;
+        }
+        let step = r.install.iter().find(|s| s.game == l.game).ok_or_else(|| bad(format!("launch for {}: no install step", l.game)))?;
+        for w in wanted {
+            let (root, rest) = paths::split_root(&w).map_err(|_| bad(format!("bad launch file {w}")))?;
+            if super::placed_sha(step, root, &rest).is_none() {
+                return Err(bad(format!("launch for {}: the {} step does not install {w}", l.game, l.game)));
+            }
+        }
+    }
+    Ok(())
 }
 
 // ---------- bring your own copy, player builds ----------
@@ -752,6 +898,73 @@ mod tests {
 
     fn ok(v: &Value) -> Result<Recipe, InstallError> {
         check_recipe(&v.to_string(), false)
+    }
+
+    #[test]
+    fn community_field() {
+        let up = "https://github.com/Someone/Up/releases/download/v1.2/Up.zip";
+        let mut v = upstream(up);
+        v["community"] = json!(true);
+        assert!(ok(&v).is_ok(), "an upstream fusion credited to the repo's owner (case aside)");
+        for bad in [json!(false), json!("true"), json!(1), json!(null)] {
+            let mut v = upstream(up);
+            v["community"] = bad.clone();
+            assert!(ok(&v).is_err(), "{bad}");
+        }
+        let mut v = upstream(up);
+        v["community"] = json!(true);
+        v["built_by"]["author"] = json!("someone-else");
+        assert!(ok(&v).is_err(), "credited to another name than the repo owner");
+        let mut v = hosted("https://github.com/SIGFAI/demo/releases/download/v1.0.0/demo.pk3");
+        v["community"] = json!(true);
+        assert!(ok(&v).is_err(), "not an upstream fusion");
+    }
+
+    #[test]
+    fn platforms_field() {
+        let url = "https://github.com/SIGFAI/demo/releases/download/v1.0.0/demo.pk3";
+        for good in [json!(["windows"]), json!(["windows", "macos"]), json!(["macos", "linux"])] {
+            let mut v = hosted(url);
+            v["platforms"] = good.clone();
+            assert!(ok(&v).is_ok(), "{good}");
+        }
+        for bad in [json!([]), json!("macos"), json!(["windows", "windows"]), json!(["Mac OS"]), json!([1]), json!(["a", "b", "c", "d", "e"])] {
+            let mut v = hosted(url);
+            v["platforms"] = bad.clone();
+            assert!(ok(&v).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn conflicts_field() {
+        let url = "https://github.com/SIGFAI/demo/releases/download/v1.0.0/demo.pk3";
+        for good in [json!(["sigf/other"]), json!(["sigf/a", "sigf/b.c", "sigf/d_e"]), json!((0..16).map(|i| format!("sigf/m{i}")).collect::<Vec<_>>())] {
+            let mut v = hosted(url);
+            v["conflicts"] = good.clone();
+            assert_eq!(ok(&v).unwrap().conflicts.len(), good.as_array().unwrap().len(), "{good}");
+        }
+        for bad in [
+            json!([]),
+            json!("sigf/a"),
+            json!(["sigf/a", "sigf/a"]),
+            json!(["sigf/demo"]),
+            json!(["a"]),
+            json!(["sigf/"]),
+            json!(["sigf/a/b"]),
+            json!(["SIGF/a"]),
+            json!(["evil/a"]),
+            json!(["sigf/.hidden"]),
+            json!(["sigf/x.git"]),
+            json!(["sigf/a b"]),
+            json!([1]),
+            json!([null]),
+            json!((0..17).map(|i| format!("sigf/m{i}")).collect::<Vec<_>>()),
+        ] {
+            let mut v = hosted(url);
+            v["conflicts"] = bad.clone();
+            assert!(ok(&v).is_err(), "{bad}");
+        }
+        assert!(ok(&hosted(url)).unwrap().conflicts.is_empty(), "optional");
     }
 
     #[test]

@@ -1,7 +1,7 @@
 {
   "name": "sigf-app",
   "private": true,
-  "version": "0.1.1",
+  "version": "0.1.2",
   "license": "AGPL-3.0-only",
   "repository": {
     "type": "git",
@@ -12,7 +12,8 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "tauri": "tauri",
-    "check-art": "node scripts/check-art.mjs"
+    "check-art": "node scripts/check-art.mjs",
+    "check-i18n": "node scripts/check-i18n.mjs"
   },
   "dependencies": {
     "@fontsource/ibm-plex-mono": "^5.2.5",
@@ -20,6 +21,7 @@
     "@fontsource/michroma": "^5.2.5",
     "@tauri-apps/api": "^2.12.1",
     "@tauri-apps/plugin-opener": "^2.7.0",
+    "hls.js": "1.6.13",
     "react": "^19.3.0",
     "react-dom": "^19.3.0"
   },

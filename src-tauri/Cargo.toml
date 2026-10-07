@@ -1,6 +1,6 @@
 [package]
 name = "sigf-app"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
 description = "SIGF: install game mashups in one click, and put every game back with Restore vanilla"
 license = "AGPL-3.0-only"
@@ -29,6 +29,8 @@ zip = { version = "8.6.0", default-features = false, features = ["deflate"] }
 thiserror = "2"
 sha1 = "0.11.0"
 base64 = "0.22"
+# Scrubbing bug reports (src/report.rs).
+regex = "1"
 # In-app updates, signed with the release key (tauri.conf.json plugins.updater; src/update.rs).
 tauri-plugin-updater = "2"
 
@@ -36,8 +38,11 @@ tauri-plugin-updater = "2"
 winreg = "0.55"
 # The process list for the updater's "Close your game first" (src/update.rs).
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Diagnostics_ToolHelp", "Win32_System_Threading"] }
+
+[target.'cfg(any(windows, target_os = "macos"))'.dependencies]
 # The native "pick your own copy" file dialog, opened by the core (the webview never names a path; src/install/byo.rs).
 rfd = { version = "0.17", default-features = false }
+
 [profile.release]
 lto = true
 codegen-units = 1

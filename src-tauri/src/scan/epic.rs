@@ -3,9 +3,14 @@ use base64::Engine as _;
 use serde_json::Value;
 use std::path::PathBuf;
 
+/// The launcher's data folder: `%ProgramData%\Epic\EpicGamesLauncher\Data` on Windows,
+/// `~/Library/Application Support/Epic/EpicGamesLauncher/Data` on macOS.
 fn launcher_data() -> PathBuf {
-    let pd = std::env::var("ProgramData").unwrap_or_else(|_| "C:\\ProgramData".into());
-    PathBuf::from(pd).join("Epic").join("EpicGamesLauncher").join("Data")
+    #[cfg(windows)]
+    let base = PathBuf::from(std::env::var("ProgramData").unwrap_or_else(|_| "C:\\ProgramData".into()));
+    #[cfg(not(windows))]
+    let base = crate::install::user_data_dir().unwrap_or_default();
+    base.join("Epic").join("EpicGamesLauncher").join("Data")
 }
 
 fn manifests_dir() -> PathBuf {
@@ -13,10 +18,10 @@ fn manifests_dir() -> PathBuf {
 }
 
 /// The launcher's catalog cache: base64 of a JSON array of catalog items carrying `keyImages`.
-/// Seen under ProgramData; LocalAppData kept as a fallback for other launcher versions.
+/// Seen under the data folder above; on Windows LocalAppData is kept as a fallback for other launcher versions.
 fn catalog() -> Vec<Value> {
-    let local = std::env::var("LOCALAPPDATA").map(|d| PathBuf::from(d).join("EpicGamesLauncher").join("Saved").join("Data"));
-    for p in [Some(launcher_data()), local.ok()].into_iter().flatten() {
+    let local = if cfg!(windows) { std::env::var("LOCALAPPDATA").ok().map(|d| PathBuf::from(d).join("EpicGamesLauncher").join("Saved").join("Data")) } else { None };
+    for p in [Some(launcher_data()), local].into_iter().flatten() {
         let Ok(raw) = std::fs::read(p.join("Catalog").join("catcache.bin")) else { continue };
         let clean: Vec<u8> = raw.into_iter().filter(|c| !c.is_ascii_whitespace()).collect();
         let Ok(json) = base64::engine::general_purpose::STANDARD.decode(clean) else { continue };

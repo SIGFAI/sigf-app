@@ -19,6 +19,27 @@ pub struct InstalledMod {
     /// Restore deletes them.
     #[serde(default)]
     pub placed: Vec<String>,
+    /// The recipe's `conflicts` at install: a later install of one of them is refused even though its own recipe does
+    /// not name this one.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub conflicts: Vec<String>,
+    /// The recipe's `requires_files`, resolved at install: checked again before every Play.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub requires_files: Vec<RequiredAt>,
+}
+
+/// One `requires_files` entry with the game folder it was checked in.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RequiredAt {
+    pub id: String,
+    /// Relative to `dir`, forward slashes (`nvse_loader.exe`).
+    pub path: String,
+    /// The scanned game folder at install.
+    pub dir: String,
+    pub message: String,
+    #[serde(default)]
+    pub page: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -48,6 +69,53 @@ pub struct InstalledGame {
     /// The recipe's launch `wait` (`port:<n>`): what to wait for before starting the next game.
     #[serde(default)]
     pub wait: Option<String>,
+    /// The recipe's launch `me3`: started through me3 with a `.me3` profile, offline.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub me3: Option<Me3Launch>,
+    /// The recipe's `launch[]` lists other games but not this one: Play does not start it (the mod starts it itself,
+    /// hidden, or the player starts it from another tool). Entries written before this field start as before.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub no_start: bool,
+}
+
+impl InstalledGame {
+    /// An entry with nothing set but its game and strategy: callers fill in what they own (`..InstalledGame::new(..)`).
+    pub fn new(game: impl Into<String>, strategy: Strategy) -> Self {
+        Self {
+            game: game.into(),
+            strategy,
+            launch_args: vec![],
+            instance: None,
+            profile_dir: None,
+            snapshot: None,
+            game_dir: None,
+            launcher: None,
+            exe: None,
+            wait: None,
+            me3: None,
+            no_start: false,
+        }
+    }
+}
+
+/// A me3 launch as installed: everything resolved and pinned at install, checked again at Play.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Me3Launch {
+    /// me3's `--game` id (`eldenring`).
+    pub game: String,
+    /// The `.me3` profile: `path` relative to `dir` (the `{app}` or `{game}` folder it was installed into).
+    pub profile: LaunchExe,
+    /// A me3.exe the recipe installed (pinned by sha256); None: the player's me3 from its installer.
+    #[serde(default)]
+    pub exe: Option<LaunchExe>,
+    #[serde(default)]
+    pub savefile: Option<String>,
+    #[serde(default)]
+    pub disable_arxan: bool,
+    /// Where to get me3 when it is missing (`install ME3 from github.com/...`), from the recipe's `requires`.
+    #[serde(default)]
+    pub hint: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -60,6 +128,16 @@ pub struct LaunchExe {
     /// Where to get it when missing (`install SKSE64 from skse.silverlock.org`), from the recipe's `requires`.
     #[serde(default)]
     pub hint: Option<String>,
+    /// A file the recipe installed: its sha256, checked before it is started.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sha256: Option<String>,
+    /// In the mashup's own `{app}` folder (`launch[].app_exe`): not a game, so Steam is not started first.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub own: bool,
+}
+
+fn is_false(b: &bool) -> bool {
+    !*b
 }
 
 pub fn load(home: &Path) -> Vec<InstalledMod> {

@@ -19,7 +19,8 @@ export type InstalledGame = {
   launcher?: string | null;
 };
 
-export type InstalledMod = { id: string; version: string; name: string; installedAt: number; games: InstalledGame[] };
+/** `conflicts`: the recipe's `conflicts` at install (absent when none). */
+export type InstalledMod = { id: string; version: string; name: string; installedAt: number; games: InstalledGame[]; conflicts?: string[] };
 
 /** Typed errors from the engine; every variant also carries a readable `message`. */
 export type InstallError = { message: string } & (
@@ -36,14 +37,23 @@ export type InstallError = { message: string } & (
   | { kind: 'ownCopyMissing'; game: string; label: string }
   | { kind: 'ownCopyMismatch'; game: string; label: string; file: string; sha1: string }
   | { kind: 'buildFailed'; id: string; label: string; log?: string | null }
+  /** Another installed mashup changes the same game files (either recipe's `conflicts` names the other). */
+  | { kind: 'conflict'; id: string; name: string; with: string; withName: string }
+  /** A prerequisite the player installs (the recipe's `requires_files`) is not in the game folder: `message` and `page`. */
+  | { kind: 'missingFile'; id: string; game: string; path: string; page: string }
 );
+
+/** Why Play did not start (the core's `PlayError`): `missingFile` with the prerequisite's page (nothing was started),
+ *  or `launch`. */
+export type PlayError = { kind: 'missingFile' | 'launch'; message: string; page?: string };
 
 /** A player's own copy (the recipe's `own_copies`): where the core found or the player picked it. Never sent anywhere. */
 export type OwnSource = { path: string; entry?: string | null };
 /** One own copy the recipe needs: `found` when this PC has a dump it accepts; `rejected` names files that were not. */
 export type OwnFound = { game: string; label: string; found: OwnSource | null; rejected: string[] };
 
-export function isInstallError(e: unknown): e is InstallError {
+/** A typed error from the core: an object with `kind` and `message`. `InstallError` by default; `PlayError` for Play. */
+export function isInstallError<T extends { kind: string; message: string } = InstallError>(e: unknown): e is T {
   return typeof e === 'object' && e !== null && 'kind' in e && 'message' in e;
 }
 

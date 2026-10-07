@@ -1,5 +1,6 @@
 //! Art for games their own store doesn't illustrate (Ubisoft, Epic titles missing from the catalog cache):
-//! the same title on Steam. Results, misses included, are cached in `%LOCALAPPDATA%\SIGF\artcache.json`.
+//! the same title on Steam. Results, misses included, are cached in `SIGF/artcache.json` in the per-user data
+//! folder (`%LOCALAPPDATA%` on Windows, `~/Library/Application Support` on macOS).
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -50,7 +51,7 @@ pub fn normalize(name: &str) -> String {
 }
 
 fn cache_path() -> Option<PathBuf> {
-    Some(PathBuf::from(std::env::var_os("LOCALAPPDATA")?).join("SIGF").join("artcache.json"))
+    Some(crate::install::user_data_dir()?.join("SIGF").join("artcache.json"))
 }
 
 fn load() -> HashMap<String, Entry> {

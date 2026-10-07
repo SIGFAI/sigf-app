@@ -129,7 +129,8 @@ fn watched(game_dirs: &HashMap<String, String>) -> (Vec<PathBuf>, Vec<PathBuf>) 
     (folders, exes)
 }
 
-/// Lower case, backslashes, no trailing separator: how Windows paths compare.
+/// Lower case, backslashes, no trailing separator: how Windows paths compare (macOS volumes are case-insensitive by
+/// default too).
 fn norm(p: &Path) -> String {
     let s = p.to_string_lossy().replace('/', "\\").to_lowercase();
     let s = s.strip_prefix(r"\\?\").map(str::to_string).unwrap_or(s);
@@ -144,7 +145,8 @@ pub fn running_in(processes: &[PathBuf], folders: &[PathBuf], exes: &[PathBuf]) 
     processes.iter().map(|p| norm(p)).any(|p| folders.iter().any(|f| p.starts_with(f.as_str())) || exes.contains(&p))
 }
 
-/// The full path of every program this user can see running (Windows; elsewhere none).
+/// The full path of every program this user can see running. Windows: the process snapshot. macOS: `/bin/ps`, whose
+/// `comm` column is the executable's full path there. Elsewhere none.
 fn process_paths() -> Vec<PathBuf> {
     #[cfg(windows)]
     {
@@ -178,7 +180,15 @@ fn process_paths() -> Vec<PathBuf> {
         }
         out
     }
-    #[cfg(not(windows))]
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("/bin/ps")
+            .args(["-axo", "comm="])
+            .output()
+            .map(|o| String::from_utf8_lossy(&o.stdout).lines().map(str::trim).filter(|l| l.starts_with('/')).map(PathBuf::from).collect())
+            .unwrap_or_default()
+    }
+    #[cfg(not(any(windows, target_os = "macos")))]
     {
         Vec::new()
     }
@@ -215,7 +225,7 @@ mod tests {
         assert!(!running_in(&procs, &[], &[p("")]));
     }
 
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "macos"))]
     #[test]
     fn sees_this_test_process() {
         let me = std::env::current_exe().unwrap();

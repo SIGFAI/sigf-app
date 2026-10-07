@@ -3,10 +3,12 @@
 import { useEffect, useState } from 'react';
 import { installUpdate, isUpdateError, onUpdateProgress, updateBlocked, type Available, type UpdateProgress } from '../lib/update';
 import { Icon } from '../ui';
+import { num, t } from '../i18n';
+import { updateErrorText } from '../i18n/errors';
 
 const BLOCK_POLL_MS = 4000;
 
-const mb = (n: number) => `${(n / 1_048_576).toFixed(1)} MB`;
+const mb = (n: number) => t('common.mb', { mb: num(n / 1_048_576, { minimumFractionDigits: 1, maximumFractionDigits: 1 }) });
 
 export function UpdateBanner({ update, gameDirs, beforeInstall, onLater }: {
   update: Available;
@@ -24,7 +26,7 @@ export function UpdateBanner({ update, gameDirs, beforeInstall, onLater }: {
   useEffect(() => {
     if (busy) return;
     let live = true;
-    const ask = () => updateBlocked(gameDirs).then((b) => live && setBlocked(b?.message ?? null), () => {});
+    const ask = () => updateBlocked(gameDirs).then((b) => live && setBlocked(b ? updateErrorText(b) : null), () => {});
     ask();
     const t = setInterval(ask, BLOCK_POLL_MS);
     return () => {
@@ -52,8 +54,8 @@ export function UpdateBanner({ update, gameDirs, beforeInstall, onLater }: {
       await installUpdate(gameDirs);
     } catch (e) {
       // A game started while it downloaded: the button explains; anything else shows under the title.
-      if (isUpdateError(e) && (e.kind === 'gameRunning' || e.kind === 'busy')) setBlocked(e.message);
-      else setError(isUpdateError(e) ? e.message : String(e));
+      if (isUpdateError(e) && (e.kind === 'gameRunning' || e.kind === 'busy')) setBlocked(updateErrorText(e));
+      else setError(isUpdateError(e) ? updateErrorText(e) : String(e));
       setProgress(null);
       setBusy(false);
     }
@@ -61,24 +63,24 @@ export function UpdateBanner({ update, gameDirs, beforeInstall, onLater }: {
 
   const pct = progress?.total ? Math.min(100, (progress.got / progress.total) * 100) : null;
   const status = !progress ? null
-    : progress.installing ? 'Installing: SIGF restarts in a moment'
-    : progress.total ? `Downloading ${mb(progress.got)} of ${mb(progress.total)}`
-    : `Downloading ${mb(progress.got)}`;
+    : progress.installing ? t('update.installing')
+    : progress.total ? t('update.downloadingOf', { got: mb(progress.got), total: mb(progress.total) })
+    : t('update.downloading', { got: mb(progress.got) });
 
   return (
     <div className="update-banner" role="status">
       <Icon name="download" size={16} />
       <div className="update-text">
-        <b>SIGF {update.version} is available</b>
-        <small>{error ?? status ?? `You have ${update.current}`}</small>
+        <b>{t('update.available', { version: update.version })}</b>
+        <small>{error ?? status ?? t('update.youHave', { version: update.current })}</small>
         {busy && <i className="update-bar" style={{ ['--p' as string]: pct === null ? '35%' : `${pct}%` }} data-indeterminate={pct === null || undefined} />}
       </div>
       {!busy && (
         <>
           <button className="act act-get" onClick={() => void go()} disabled={!!blocked} title={blocked ?? undefined}>
-            {blocked ?? 'Update and restart'}
+            {blocked ?? t('update.restart')}
           </button>
-          <button className="act act-ghost" onClick={onLater}>Later</button>
+          <button className="act act-ghost" onClick={onLater}>{t('update.later')}</button>
         </>
       )}
     </div>

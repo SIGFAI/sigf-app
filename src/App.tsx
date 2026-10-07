@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { CATALOG, type Mashup } from './data/catalog';
+import { CATALOG, installedConflict, type Mashup } from './data/catalog';
 import { GAME } from './data/games';
-import { fetchAgents, getText, inTauri, launchGame, openUrl, playInstalled, scanGames, windowAction, type Agent, type Scan } from './lib/api';
-import { findOwnCopies, installMashup, installedMods, isInstallError, onInstallProgress, restoreMashup, type OwnFound } from './lib/install';
+import { appPlatform, fetchAgents, getText, inTauri, launchGame, openUrl, playInstalled, prismDownload, runsOn, scanGames, windowAction, type Agent, type Scan } from './lib/api';
+import { findOwnCopies, installMashup, installedMods, isInstallError, onInstallProgress, restoreMashup, type OwnFound, type PlayError } from './lib/install';
 import { Icon, STORE_LABEL } from './ui';
 import { Home } from './views/Home';
 import { Library } from './views/Library';
@@ -14,9 +14,13 @@ import { Picker } from './views/Picker';
 import { JoinSheet, Lobbies, type Joining } from './views/Lobbies';
 import { OwnCopySheet, type OwnAsk } from './views/OwnCopy';
 import { PrivacyPanel } from './views/Privacy';
+import { ReportSheet } from './views/Report';
+import type { LastError } from './lib/api';
 import { UpdateBanner } from './views/Update';
 import { UPDATE_EVERY_MS, checkUpdate, type Available } from './lib/update';
 import { loadPrivacy, usePrivacy } from './lib/privacy';
+import { list, setLocale, t, tx, useLocale, type Key } from './i18n';
+import { installErrorText, joinErrorText, playErrorText } from './i18n/errors';
 import {
   ApiError, SERVER_ACTIVE, closeLobby, createLobby, getLobby, getServer, heartbeat, hostedForget, hostedList, hostedSave, hostingInfo, isJoinError, joinLobby,
   minecraftPlayers, onInviteLinks, onJoinProgress, startServer, stopServer, worldLink, type HostedEntry, type HostedServer, type Hosted, type Hosting, type Lobby, type Target,
@@ -38,6 +42,9 @@ export type HostOptions = { mode: 'invite' | 'public'; maxPlayers: number; name:
 export type Ctx = {
   scan: Scan | null;
   catalog: Mashup[];
+  /** Live catalog mashups that do not run on this system, by id -> the systems they run on (`windows`...). The catalog
+   *  above leaves them out; lobby lists show their lobbies disabled ("Windows only"). */
+  elsewhere: Map<string, string[]>;
   owned: Set<string>;
   installs: Record<string, Install>;
   pair: [string | null, string | null];
@@ -47,6 +54,10 @@ export type Ctx = {
   get: (m: Mashup) => void;
   play: (m: Mashup) => void;
   restore: (m: Mashup) => void;
+  /** The installed mashup `m` cannot be installed next to (catalog `conflicts`, both ways), or null. */
+  conflictOf: (m: Mashup) => Mashup | null;
+  /** Restores the conflicting mashup `other`, then installs `m` (the "Restore <other> first" button). */
+  restoreThenGet: (m: Mashup, other: Mashup) => void;
   agents: Agent[];
   go: (v: View) => void;
   /** Installs a local mashup.json (creators, tests): same engine, no catalog. */
@@ -72,15 +83,17 @@ export type Ctx = {
   /** Joins a lobby by id: the join sheet takes it from there. An invite link always asks first; a Join from a lobby
    *  list (`fromList`) asks when it would install something. */
   join: (id: string, fromList?: boolean) => void;
+  /** "Report a bug" for a mashup, or for the app itself (null): the report sheet, read before anything opens. */
+  report: (m: Mashup | null) => void;
 };
 
-const NAV: { id: View; label: string; icon: string }[] = [
-  { id: 'mix', label: 'Mix', icon: 'mix' },
-  { id: 'library', label: 'Library', icon: 'library' },
-  { id: 'live', label: 'Live', icon: 'tv' },
-  { id: 'together', label: 'Lobbies', icon: 'people' },
-  { id: 'build', label: 'Build', icon: 'build' },
-  { id: 'queue', label: 'Installs', icon: 'queue' },
+const NAV: { id: View; label: Key; icon: string }[] = [
+  { id: 'mix', label: 'nav.mix', icon: 'mix' },
+  { id: 'library', label: 'nav.library', icon: 'library' },
+  { id: 'live', label: 'nav.live', icon: 'tv' },
+  { id: 'together', label: 'nav.lobbies', icon: 'people' },
+  { id: 'build', label: 'nav.build', icon: 'build' },
+  { id: 'queue', label: 'nav.installs', icon: 'queue' },
 ];
 
 const loadInstalls = (): Record<string, Install> => {
@@ -101,6 +114,7 @@ export default function App() {
   const [agents, setAgents] = useState<Agent[]>([]);
   // The seed only dresses the browser preview; the real app shows the live catalog alone.
   const [catalog, setCatalog] = useState<Mashup[]>(inTauri ? [] : CATALOG);
+  const [elsewhere, setElsewhere] = useState<Map<string, string[]>>(new Map());
   const [query, setQuery] = useState('');
   const [toast, setToast] = useState<string | null>(null);
   const [hosted, setHosted] = useState<Hosted | null>(null);
@@ -111,7 +125,18 @@ export default function App() {
   const [serverError, setServerError] = useState<string | null>(null);
   const [worlds, setWorlds] = useState<HostedEntry[]>([]);
   const privacy = usePrivacy();
+  // The language: the saved choice once the privacy file is read, the system's until then. App re-renders on a switch.
+  useLocale();
+  useEffect(() => setLocale(privacy?.language), [privacy?.language]);
   const [privacyOpen, setPrivacyOpen] = useState(false);
+  // Report a bug: the sheet's subject (null: the app), and the last error the app showed per mashup ('' = any), this
+  // session only. They stay on the PC unless the player puts them in a report and submits it.
+  const [reporting, setReporting] = useState<{ m: Mashup | null } | null>(null);
+  const lastErrors = useRef<Record<string, LastError>>({});
+  const noteError = (id: string, message: string, kind: LastError['kind']) => {
+    lastErrors.current[id] = { message, kind };
+    lastErrors.current[''] = { message, kind };
+  };
   const [update, setUpdate] = useState<Available | null>(null);
   const [updateLater, setUpdateLater] = useState<string | null>(null);
   const warned = useRef<string | null>(null);
@@ -183,14 +208,14 @@ export default function App() {
       } catch (e) {
         if (e instanceof ApiError && (e.status === 410 || e.status === 404)) {
           setHosted(null);
-          flash('Your lobby has ended');
+          flash(t('toast.lobbyEnded'));
         }
       }
     };
-    const t = setInterval(beat, HEARTBEAT_MS);
+    const timer = setInterval(beat, HEARTBEAT_MS);
     const first = setTimeout(beat, 4000);   // a first count soon after opening
     return () => {
-      clearInterval(t);
+      clearInterval(timer);
       clearTimeout(first);
     };
   }, [hosted?.lobby.id]);
@@ -213,23 +238,23 @@ export default function App() {
       setServer(s);
       if (s.worldUntil) void keepWorld(h, s);
       if (s.state === 'running' && before !== 'running') {
-        flash('Your server is ready: friends join with the invite link');
+        flash(t('toast.serverReady'));
         getLobby(id).then((lobby) => setHosted((cur) => (cur && cur.lobby.id === id ? { ...cur, lobby } : cur)), () => {});
       }
       if (s.state === 'stopped' || s.state === 'failed') {
-        flash(s.state === 'failed' ? 'The server stopped unexpectedly. Your world is kept for 7 days.' : 'Your server stopped. Your world is kept for 7 days.');
+        flash(s.state === 'failed' ? t('toast.serverFailed') : t('toast.serverStopped'));
         getLobby(id).then((lobby) => setHosted((cur) => (cur && cur.lobby.id === id ? { ...cur, lobby } : cur)), () => {});
       }
       const left = s.expiresAt ? Date.parse(s.expiresAt) - Date.now() : Infinity;
       if (s.state === 'running' && left < SERVER_WARN_MS && warned.current !== id) {
         warned.current = id;
-        flash(`Your free server stops in ${Math.max(1, Math.round(left / 60_000))} min: download the world to keep playing it`);
+        flash(t('toast.serverStopsSoon', { count: Math.max(1, Math.round(left / 60_000)) }));
       }
     };
-    const t = setInterval(poll, SERVER_POLL_MS);
+    const timer = setInterval(poll, SERVER_POLL_MS);
     const first = setTimeout(poll, 1500);
     return () => {
-      clearInterval(t);
+      clearInterval(timer);
       clearTimeout(first);
     };
   }, [hosted?.lobby.id, server?.state]);
@@ -270,7 +295,7 @@ export default function App() {
   useEffect(() => {
     const busy = Object.values(installs).some((i) => i.phase !== 'ready' && !i.real);
     if (!busy) return;
-    const t = setInterval(() => {
+    const timer = setInterval(() => {
       setInstalls((all) => {
         const next = { ...all };
         for (const [id, i] of Object.entries(all)) {
@@ -282,28 +307,74 @@ export default function App() {
           if (pct >= 100) {
             pct = 0;
             phase = phase === 'download' ? 'verify' : phase === 'verify' ? 'install' : 'ready';
-            if (phase === 'ready') flash(`${m?.name ?? id} is ready to play`);
+            if (phase === 'ready') flash(t('toast.ready', { name: m?.name ?? id }));
           }
           next[id] = { ...i, phase, pct: phase === 'ready' ? 100 : pct };
         }
         return next;
       });
     }, 250);
-    return () => clearInterval(t);
+    return () => clearInterval(timer);
   }, [installs]);
 
-  /** An install error, said for the player. */
-  const installFailed = (e: unknown) => {
-    if (!isInstallError(e)) return String(e);
-    if (e.kind === 'needsLauncher') return 'Minecraft mashups need Prism Launcher: install it, then click Get again';
-    if (e.kind === 'ownCopyMissing') return `Uses your own copy of ${e.label}. SIGF never ships or downloads it: click Get and pick your file.`;
-    if (e.kind === 'ownCopyMismatch') return `That file is not a ${e.label} dump this mashup can use. Pick a clean, unmodified dump.`;
-    if (e.kind === 'buildFailed') return `Building ${e.label} on your PC failed: ${e.message}${e.log ? ` (log: ${e.log})` : ''}`;
-    return e.message;
+  /** A catalog mashup by id; one the catalog no longer lists (taken down, other system) as a stub restore can use. */
+  const mashupById = (id: string, name: string | null, like: Mashup): Mashup =>
+    catalog.find((c) => c.id === id) ?? { ...like, id, name: name ?? id.replace(/^sigf\//, ''), conflicts: [], recipeUrl: undefined };
+
+  /** Forgets an install in the UI (restored, failed). */
+  const dropInstall = (id: string) =>
+    setInstalls((a) => {
+      const n = { ...a };
+      delete n[id];
+      return n;
+    });
+
+  /** Restore vanilla for one mashup; true when it is gone. Asks before restoring over game files changed since the install. */
+  const restoreOne = async (m: Mashup): Promise<boolean> => {
+    if (installs[m.id]?.real) {
+      try {
+        try {
+          await restoreMashup(m.id);
+        } catch (e) {
+          if (!(isInstallError(e) && e.kind === 'tampered')) throw e;
+          if (!confirm(t('confirm.tampered', { count: e.files.length }))) return false;
+          await restoreMashup(m.id, true);
+        }
+      } catch (e) {
+        const message = isInstallError(e) ? e.message : String(e);
+        noteError(m.id, `Restore: ${message}`, 'restore');
+        flash(installErrorText(e));
+        return false;
+      }
+    }
+    dropInstall(m.id);
+    flash(t('toast.restored', { game: GAME[m.host]?.short ?? m.host }));
+    return true;
+  };
+
+  /** Two mashups that change the same game files are never installed together: offer to restore the other one first. */
+  const offerRestoreFirst = async (m: Mashup, other: Mashup) => {
+    if (!confirm(t('confirm.restoreFirst', { name: m.name, other: other.name }))) return;
+    if (await restoreOne(other)) await getMashup(m, true);
   };
   const flash = (s: string) => {
     setToast(s);
     setTimeout(() => setToast((t) => (t === s ? null : t)), 3200);
+  };
+
+  /** A prerequisite the player installs is missing (the recipe's `requires_files`): say so and offer its page. Nothing
+   *  was installed or started. */
+  const askPrerequisite = (message: string, page: string | undefined) => {
+    if (page && /^https:\/\//.test(page)) {
+      if (confirm(t('confirm.prerequisite', { message, page }))) void openUrl(page);
+    } else flash(message);
+  };
+
+  /** Install and Play refuse with `missingFile` when a prerequisite is missing: true when `e` was one (handled). */
+  const onMissingFile = (e: unknown) => {
+    if (!isInstallError<PlayError>(e) || e.kind !== 'missingFile') return false;
+    askPrerequisite(e.message, e.page);
+    return true;
   };
 
   /** Keeps the host secret of a hosted lobby in the core's store (world downloads for 7 days, restarts included). */
@@ -330,7 +401,7 @@ export default function App() {
       if (lobby) setHosted((cur) => (cur && cur.lobby.id === lobby.id ? { ...cur, lobby } : cur));
     } catch (e) {
       const busy = e instanceof ApiError && e.code === 'servers_busy';
-      setServerError(busy ? `All free servers are busy, try again in a few minutes${e.position ? ` (you would be #${e.position} in line)` : ''}` : e instanceof Error ? e.message : String(e));
+      setServerError(busy ? (e.position ? t('server.busyLine', { position: String(e.position) }) : t('lobbyApi.servers_busy')) : e instanceof Error ? e.message : String(e));
     }
   }
 
@@ -348,11 +419,14 @@ export default function App() {
     ).catch(() => {});
   }
 
-  /** Reads the live catalog; seed entries stay for layout (browser preview only) until the API has enough mashups. */
+  /** Reads the live catalog, keeping the mashups that run on this system (a Mac never lists a Windows-only one); seed
+   *  entries stay for layout (browser preview only) until the API has enough mashups. */
   function loadCatalog() {
-    return getText(`${SITE}/api/app/catalog`)
-      .then((t) => {
-        const live = JSON.parse(t) as Partial<Mashup>[] as Mashup[];
+    return Promise.all([getText(`${SITE}/api/app/catalog`), appPlatform()])
+      .then(([text, platform]) => {
+        const all = JSON.parse(text) as Partial<Mashup>[] as Mashup[];
+        const live = all.filter((m) => runsOn(m, platform));
+        setElsewhere(new Map(all.filter((m) => !runsOn(m, platform)).map((m) => [m.id, m.platforms ?? ['windows']])));
         const ids = new Set(live.map((m) => m.id));
         setCatalog([...live.map((m) => ({ ...m, steps: m.steps ?? [], strategy: m.strategy ?? "", installSeconds: m.installSeconds ?? 30, sizeMb: m.sizeMb ?? 0, needs: m.needs ?? [m.host] })), ...(inTauri ? [] : CATALOG.filter((m) => !ids.has(m.id)))]);
         catalogAt.current = Date.now();
@@ -407,17 +481,17 @@ export default function App() {
     try {
       lobby = await getLobby(id);
     } catch (e) {
-      return fail(e instanceof Error ? e.message : String(e));
+      return fail(isJoinError(e) ? joinErrorText(e) : e instanceof Error ? e.message : String(e));
     }
     setJoining({ id, step: 'lobby', lobby });
     // A cold start from a link: the library scan may still be running.
     for (let i = 0; i < 60 && !latest.current.scan; i++) await new Promise((r) => setTimeout(r, 250));
     const { scan: sc, owned: own } = latest.current;
-    if (!sc) return fail('Still looking for your games: try again in a second');
+    if (!sc) return fail(t('join.stillScanning'));
     const miss = lobby.games.filter((g) => !own.has(g));
-    if (miss.length) return fail(`You need ${miss.map((g) => GAME[g]?.name ?? g).join(' and ')} to join this lobby`);
-    if (lobby.state === 'full') return fail('This lobby is full');
-    if (lobby.state === 'waiting') return fail(lobby.server.provider === 'controller' ? `${lobby.host}'s server is starting. Try again in a minute.` : `${lobby.host} has not opened the game yet. Try again in a moment.`);
+    if (miss.length) return fail(t('join.needGames', { games: list(miss.map((g) => GAME[g]?.name ?? g)) }));
+    if (lobby.state === 'full') return fail(t('err.join.lobbyFull'));
+    if (lobby.state === 'waiting') return fail(lobby.server.provider === 'controller' ? t('join.serverStarting', { host: lobby.host }) : t('join.hostNotReady', { host: lobby.host }));
     const have = latest.current.installs[lobby.mashup.id];
     const install = !(have?.phase === 'ready' && have.real && have.version === lobby.mashup.version);
     if (!fromList || install) return setJoining({ id, step: 'confirm', lobby, install });
@@ -445,7 +519,7 @@ export default function App() {
   const confirmJoin = async (id: string, lobby: Lobby) => {
     const fail = (error: string, prism = false) => setJoining((j) => ({ ...(j ?? { id }), id, step: 'error', error, prism }));
     const sc = latest.current.scan;
-    if (!sc) return fail('Still looking for your games: try again in a second');
+    if (!sc) return fail(t('join.stillScanning'));
     setJoining({ id, step: 'lobby', lobby });
     if (!inTauri) {
       setJoining({ id, step: 'install', lobby });
@@ -458,85 +532,83 @@ export default function App() {
       refreshInstalled();
     } catch (e) {
       const prism = isJoinError(e) && e.kind === 'needsLauncher';
-      fail(prism ? 'Minecraft mashups need Prism Launcher: install it, sign in once, then try again' : isJoinError(e) ? e.message : String(e), prism);
+      fail(prism ? t('join.needsPrism') : isJoinError(e) ? joinErrorText(e) : String(e), prism);
     }
   };
 
   latest.current = { scan, owned, installs, hosted, server, join };
 
+  /** Get: fetch the recipe, check own copies, install. `afterRestore`: the conflicting mashup was just restored (the
+   *  installs state above is not updated yet; the core checks the pair again anyway). */
+  const getMashup = async (m: Mashup, afterRestore = false) => {
+    const clash = afterRestore ? null : installedConflict(m, (id) => installs[id]?.phase === 'ready');
+    if (clash) return offerRestoreFirst(m, mashupById(clash, null, m));
+    if (!inTauri) {
+      setInstalls((a) => ({ ...a, [m.id]: { phase: 'download', pct: 0, started: Date.now() } }));
+      return;
+    }
+    if (!m.recipeUrl) return flash(t('toast.notInCatalog', { name: m.name }));
+    // The catalog serves recipeUrl relative to the site (/api/app/recipe/<id>@<version>).
+    let text: string;
+    try {
+      text = await getText(new URL(m.recipeUrl, SITE).href);
+      // A mashup on the player's own copy (a ROM): found on this PC or picked, before anything is downloaded.
+      if (!(await ownCopiesReady(m, text))) return;
+    } catch (e) {
+      noteError(m.id, installErrorText(e, { loc: 'en' }), 'install');
+      return flash(installErrorText(e));
+    }
+    setInstalls((a) => ({ ...a, [m.id]: { phase: 'download', pct: 0, started: Date.now(), real: true } }));
+    try {
+      const dirs: Record<string, string> = {};
+      for (const g of scan?.games ?? []) if (g.canon && g.installDir && !dirs[g.canon]) dirs[g.canon] = g.installDir;
+      const done = await installMashup(text, dirs);
+      setInstalls((a) => ({ ...a, [m.id]: { phase: 'ready', pct: 100, started: Date.now(), real: true, version: done?.version ?? m.version } }));
+      flash(t('toast.ready', { name: m.name }));
+    } catch (e) {
+      dropInstall(m.id);
+      if (isInstallError(e) && e.kind === 'conflict') return offerRestoreFirst(m, mashupById(e.with, e.withName, m));
+      if (onMissingFile(e)) return;
+      noteError(m.id, installErrorText(e, { loc: 'en' }), 'install');
+      flash(installErrorText(e));
+      if (isInstallError(e) && e.kind === 'needsLauncher') void appPlatform().then((p) => openUrl(prismDownload(p)));
+    }
+  };
+
   const ctxInstalls = () => installs;
   const ctx: Ctx = {
     scan,
     catalog,
+    elsewhere,
     owned,
     installs,
     pair,
     setPair,
     pick: (slot) => setPicking(slot),
     open: setDetail,
-    get: async (m) => {
-      if (!inTauri) {
-        setInstalls((a) => ({ ...a, [m.id]: { phase: 'download', pct: 0, started: Date.now() } }));
-        return;
-      }
-      if (!m.recipeUrl) return flash(`${m.name} is not in the live catalog yet`);
-      // The catalog serves recipeUrl relative to the site (/api/app/recipe/<id>@<version>).
-      let text: string;
-      try {
-        text = await getText(new URL(m.recipeUrl, SITE).href);
-        // A mashup on the player's own copy (a ROM): found on this PC or picked, before anything is downloaded.
-        if (!(await ownCopiesReady(m, text))) return;
-      } catch (e) {
-        return flash(installFailed(e));
-      }
-      setInstalls((a) => ({ ...a, [m.id]: { phase: 'download', pct: 0, started: Date.now(), real: true } }));
-      try {
-        const dirs: Record<string, string> = {};
-        for (const g of scan?.games ?? []) if (g.canon && g.installDir && !dirs[g.canon]) dirs[g.canon] = g.installDir;
-        const done = await installMashup(text, dirs);
-        setInstalls((a) => ({ ...a, [m.id]: { phase: 'ready', pct: 100, started: Date.now(), real: true, version: done?.version ?? m.version } }));
-        flash(`${m.name} is ready to play`);
-      } catch (e) {
-        setInstalls((a) => {
-          const n = { ...a };
-          delete n[m.id];
-          return n;
-        });
-        flash(installFailed(e));
-        if (isInstallError(e) && e.kind === 'needsLauncher') void openUrl('https://prismlauncher.org/download/windows/');
-      }
-    },
+    get: (m) => void getMashup(m),
     play: async (m) => {
       if (ctxInstalls()[m.id]?.real) {
         try {
           await playInstalled(m.id, scan?.games ?? []);
         } catch (e) {
-          return flash(String(e));
+          const message = isInstallError<PlayError>(e) ? e.message : String(e);
+          noteError(m.id, `Play: ${message}`, 'play');
+          if (onMissingFile(e)) return;
+          return flash(playErrorText(message));
         }
       } else {
         const g = scan?.games.find((x) => x.canon === m.host);
         if (g?.launch) launchGame(g.launch);
       }
-      flash(`Launching ${m.name}${m.kind === 'passthrough' ? ` · ${GAME[m.guest!]?.short} first, then ${GAME[m.host]?.short}` : ''}`);
+      flash(m.kind === 'passthrough' ? t('toast.launchingPair', { name: m.name, first: GAME[m.guest!]?.short ?? m.guest!, then: GAME[m.host]?.short ?? m.host }) : t('toast.launching', { name: m.name }));
     },
-    restore: async (m) => {
-      if (installs[m.id]?.real) {
-        try {
-          await restoreMashup(m.id);
-        } catch (e) {
-          if (isInstallError(e) && e.kind === 'tampered') {
-            if (!confirm(`${e.files.length} game file(s) changed since the install (a game update?). Restore anyway?`)) return;
-            await restoreMashup(m.id, true);
-          } else return flash(isInstallError(e) ? e.message : String(e));
-        }
-      }
-      setInstalls((a) => {
-        const n = { ...a };
-        delete n[m.id];
-        return n;
-      });
-      flash(`${GAME[m.host]?.short ?? m.host} restored to vanilla`);
+    restore: (m) => void restoreOne(m),
+    conflictOf: (m) => {
+      const id = installedConflict(m, (x) => installs[x]?.phase === 'ready');
+      return id ? mashupById(id, null, m) : null;
     },
+    restoreThenGet: (m, other) => void restoreOne(other).then((ok) => { if (ok) return getMashup(m, true); }),
     agents,
     go: setView,
     sideload: async (text) => {
@@ -544,14 +616,14 @@ export default function App() {
       try {
         r = JSON.parse(text);
       } catch {
-        return flash('Not a valid mashup.json');
+        return flash(t('toast.badRecipe'));
       }
       const host = r.games?.find((g) => g.role === 'host')?.game ?? r.games?.[0]?.game ?? 'unknown';
       const guest = r.games?.find((g) => g.role === 'guest')?.game;
       const m: Mashup = {
-        id: r.id, name: r.name, tagline: r.tagline ?? 'Installed from a local recipe', kind: r.kind ?? 'mod', host, guest,
-        needs: (r.games ?? []).map((g) => g.game), by: { name: 'Local file' }, license: '', sizeMb: 0, installSeconds: 0,
-        strategy: 'local recipe', steps: [], updated: '', recipeUrl: 'local',
+        id: r.id, name: r.name, tagline: r.tagline ?? t('sideload.tagline'), kind: r.kind ?? 'mod', host, guest,
+        needs: (r.games ?? []).map((g) => g.game), by: { name: t('sideload.by') }, license: '', sizeMb: 0, installSeconds: 0,
+        strategy: t('sideload.strategy'), steps: [], updated: '', recipeUrl: 'local',
       };
       setCatalog((c) => [m, ...c.filter((x) => x.id !== m.id)]);
       setInstalls((a) => ({ ...a, [m.id]: { phase: 'download', pct: 0, started: Date.now(), real: true } }));
@@ -560,14 +632,10 @@ export default function App() {
         for (const g of scan?.games ?? []) if (g.canon && g.installDir && !dirs[g.canon]) dirs[g.canon] = g.installDir;
         await installMashup(text, dirs);
         setInstalls((a) => ({ ...a, [m.id]: { phase: 'ready', pct: 100, started: Date.now(), real: true } }));
-        flash(`${m.name} installed`);
+        flash(t('toast.installed', { name: m.name }));
       } catch (e) {
-        setInstalls((a) => {
-          const n = { ...a };
-          delete n[m.id];
-          return n;
-        });
-        flash(isInstallError(e) ? e.message : String(e));
+        dropInstall(m.id);
+        flash(installErrorText(e, { asSent: true }));
       }
     },
     hosted,
@@ -580,9 +648,9 @@ export default function App() {
         setServerError(null);
         setHosted(h);
         if (o.region) {
-          flash('Lobby open: starting your free server');
+          flash(t('toast.lobbyOpenServer'));
           await startHosted(h, o.region);
-        } else flash(o.mode === 'public' ? 'Lobby open: listed for players who own the games' : 'Invite ready: copy the link and send it');
+        } else flash(o.mode === 'public' ? t('toast.lobbyOpenPublic') : t('toast.inviteReady'));
       } catch (e) {
         flash(e instanceof Error ? e.message : String(e));
       }
@@ -600,7 +668,7 @@ export default function App() {
       setHosted(null);
       setServer(null);
       setServerError(null);
-      if (h) closeLobby(h).then(() => flash('Lobby closed'), () => flash('Lobby closed here; it ends by itself within 90 s'));
+      if (h) closeLobby(h).then(() => flash(t('toast.lobbyClosed')), () => flash(t('toast.lobbyClosedLocal')));
     },
     hosting,
     server,
@@ -618,7 +686,7 @@ export default function App() {
         await keepWorld(h, s);
         const lobby = await getLobby(h.lobby.id).catch(() => null);
         if (lobby) setHosted((cur) => (cur && cur.lobby.id === lobby.id ? { ...cur, lobby } : cur));
-        flash('Server stopped. Your world is kept for 7 days.');
+        flash(t('toast.serverStoppedByYou'));
       } catch (e) {
         flash(e instanceof Error ? e.message : String(e));
       }
@@ -626,11 +694,11 @@ export default function App() {
     worlds,
     downloadWorld: async (lobby) => {
       const w = worlds.find((x) => x.lobby === lobby) ?? (hosted?.lobby.id === lobby ? { secret: hosted.secret } : null);
-      if (!w) return flash('This world is no longer kept');
+      if (!w) return flash(t('toast.worldGone'));
       try {
         const link = await worldLink(lobby, w.secret);
         await openUrl(link.url);
-        flash('Your world is downloading in the browser');
+        flash(t('toast.worldDownloading'));
       } catch (e) {
         flash(e instanceof Error ? e.message : String(e));
       }
@@ -639,6 +707,7 @@ export default function App() {
       hostedForget(lobby).then(setWorlds, () => {});
     },
     join: (id, fromList) => void join(id, fromList),
+    report: (m) => setReporting({ m }),
   };
 
   const active = Object.values(installs).filter((i) => i.phase !== 'ready');
@@ -649,11 +718,11 @@ export default function App() {
       <header className="titlebar" data-tauri-drag-region>
         <div className="brand" data-tauri-drag-region>
           <span className="wordmark">SIGF</span>
-          <span className="tag">play anything · build anything</span>
+          <span className="tag">{t('app.tagline')}</span>
         </div>
         <label className="search">
           <Icon name="search" size={15} />
-          <input ref={search} value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search mashups, games, creators" onFocus={() => setView('mix')} />
+          <input ref={search} value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t('app.search')} onFocus={() => setView('mix')} />
           <kbd>Ctrl K</kbd>
         </label>
         <div className="stores" data-tauri-drag-region>
@@ -661,26 +730,26 @@ export default function App() {
             const on = scan?.stores.includes(s);
             const n = scan?.games.filter((g) => g.store === s).length ?? 0;
             return (
-              <span key={s} className={`store ${on ? 'on' : ''}`} title={on ? `${STORE_LABEL[s]}: ${n} game${n === 1 ? '' : 's'}` : `${STORE_LABEL[s]}: not found`}>
+              <span key={s} className={`store ${on ? 'on' : ''}`} title={on ? t('app.storeGames', { store: STORE_LABEL[s], count: n }) : t('app.storeMissing', { store: STORE_LABEL[s] })}>
                 <i />
                 {STORE_LABEL[s]}
               </span>
             );
           })}
         </div>
-        <button className={`refresh ${refreshing ? 'spin' : ''}`} onClick={() => void refreshAll()} disabled={refreshing} title="Refresh" aria-label="Refresh">
+        <button className={`refresh ${refreshing ? 'spin' : ''}`} onClick={() => void refreshAll()} disabled={refreshing} title={t('app.refresh')} aria-label={t('app.refresh')}>
           <Icon name="refresh" size={15} />
         </button>
         <div className="winctl">
-          <button onClick={() => windowAction('minimize')} aria-label="Minimize"><Icon name="min" size={14} /></button>
-          <button onClick={() => windowAction('toggleMaximize')} aria-label="Maximize"><Icon name="max" size={12} /></button>
+          <button onClick={() => windowAction('minimize')} aria-label={t('app.minimize')}><Icon name="min" size={14} /></button>
+          <button onClick={() => windowAction('toggleMaximize')} aria-label={t('app.maximize')}><Icon name="max" size={12} /></button>
           <button
             className="close"
             onClick={async () => {
               if (hosted) await closeLobby(hosted).catch(() => {});
               windowAction('close');
             }}
-            aria-label="Close"
+            aria-label={t('common.close')}
           ><Icon name="x" size={14} /></button>
         </div>
       </header>
@@ -689,7 +758,7 @@ export default function App() {
         {NAV.map((n) => (
           <button key={n.id} className={view === n.id ? 'on' : ''} onClick={() => setView(n.id)}>
             <Icon name={n.icon} size={22} />
-            <span>{n.label}</span>
+            <span>{t(n.label)}</span>
             {n.id === 'queue' && active.length > 0 && (
               <svg className="ring" viewBox="0 0 36 36"><circle cx="18" cy="18" r="16" pathLength="100" strokeDasharray={`${avg} 100`} /></svg>
             )}
@@ -697,10 +766,10 @@ export default function App() {
         ))}
         <div className="rail-foot">
           <span className="count">{scan ? scan.games.length : '…'}</span>
-          <span>games<br />found</span>
-          <button className="rail-privacy" onClick={() => setPrivacyOpen(true)} title="What SIGF sends, and to whom">
+          <span>{tx('app.gamesFound', { br: <br /> })}</span>
+          <button className="rail-privacy" onClick={() => setPrivacyOpen(true)} title={t('privacy.titleSheet')}>
             <Icon name="shield" size={16} />
-            <span>Privacy</span>
+            <span>{t('privacy.eyebrow')}</span>
           </button>
         </div>
       </nav>
@@ -732,7 +801,16 @@ export default function App() {
       {ownAsk && <OwnCopySheet ask={ownAsk} onDone={(ok) => { setOwnAsk(null); ownAsk.resolve(ok); }} />}
       {joining && <JoinSheet ctx={ctx} j={joining} onClose={() => setJoining(null)} onConfirm={(l) => void confirmJoin(joining.id, l)} />}
       {privacy && !privacy.asked && <PrivacyPanel first initial={privacy} onDone={() => {}} />}
-      {privacy?.asked && privacyOpen && <PrivacyPanel initial={privacy} onDone={() => { setPrivacyOpen(false); flash('Privacy choices saved'); }} onClose={() => setPrivacyOpen(false)} />}
+      {privacy?.asked && privacyOpen && <PrivacyPanel initial={privacy} onDone={() => { setPrivacyOpen(false); flash(t('toast.privacySaved')); }} onClose={() => setPrivacyOpen(false)} onReport={() => { setPrivacyOpen(false); setReporting({ m: null }); }} />}
+      {reporting && (
+        <ReportSheet
+          ctx={ctx}
+          m={reporting.m}
+          lastError={(reporting.m ? lastErrors.current[reporting.m.id] : lastErrors.current['']) ?? null}
+          onClose={() => setReporting(null)}
+          flash={flash}
+        />
+      )}
       {update && answered && updateLater !== update.version && (
         <UpdateBanner
           update={update}

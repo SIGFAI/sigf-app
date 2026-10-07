@@ -3,6 +3,8 @@
 // every call works on local sample data, so the screens can be designed without the app or the API.
 
 import { inTauri, type Game } from './api';
+import { t, type Key } from '../i18n';
+import { en } from '../i18n/en';
 
 export type JoinKind = 'prism' | 'connect' | 'mod';
 export type Target = { game: string; address: string; join?: JoinKind };
@@ -62,22 +64,8 @@ export class ApiError extends Error {
   }
 }
 
-const READABLE: Record<string, string> = {
-  unknown_version: 'This mashup has a newer version: update it, then open the lobby again',
-  unknown_mashup: 'This mashup is not in the live catalog yet',
-  too_many_lobbies: 'You already host 3 open lobbies: close one first',
-  too_many_requests: 'Too many requests, try again in a minute',
-  lobby_closed: 'This lobby has ended',
-  not_found: 'No such lobby',
-  no_hosted_servers: 'Hosted servers are not available yet: host from your own game',
-  servers_busy: 'All free servers are busy, try again in a few minutes',
-  too_many_servers: 'You already run a free server: stop it first',
-  not_hostable: 'This mashup cannot run on a hosted server yet: host from your own game',
-  region_unavailable: 'That region is not open yet: pick Europe',
-  server_unavailable: 'The hosted servers did not answer: try again in a minute',
-  server_failed: 'The server could not start: try again in a minute',
-  no_world: 'No saved world yet: try again once the server has run a minute',
-};
+/** The lobby service's error code in the player's language, when the dictionaries have it. */
+const readable = (code: string): Key | null => (`lobbyApi.${code}` in en ? (`lobbyApi.${code}` as Key) : null);
 
 /** One call to /api/app/lobbies* through the core (no CORS, no webview origin involved). */
 async function api<T>(method: 'GET' | 'POST' | 'DELETE', path: string, body?: unknown, secret?: string): Promise<T> {
@@ -88,7 +76,9 @@ async function api<T>(method: 'GET' | 'POST' | 'DELETE', path: string, body?: un
   } catch {}
   if (r.status >= 400) {
     const code = json.error ?? `http_${r.status}`;
-    const e = new ApiError(r.status, code, READABLE[code] ?? json.detail ?? `The lobby service answered ${r.status}`);
+    const key = readable(code);
+    const status = String(r.status);
+    const e = new ApiError(r.status, code, key ? t(key, { status }) : json.detail ?? t('lobbyApi.status', { status }));
     if (typeof json.position === 'number') e.position = json.position;
     throw e;
   }
