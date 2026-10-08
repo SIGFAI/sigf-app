@@ -6,6 +6,7 @@ pub mod privacy;
 pub mod report;
 pub mod scan;
 pub mod update;
+pub mod workshop;
 
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -27,8 +28,9 @@ pub(crate) fn install_running() -> bool {
 /// hosted.json is read and rewritten whole: one writer at a time.
 static HOSTED_LOCK: Mutex<()> = Mutex::new(());
 
-/// Invite links received (deep link, second instance) and not yet read by the UI. The UI drains it on start and on
-/// every `link://open` event, so a link that arrives before the webview listens is never lost.
+/// Links received (deep link, second instance) and not yet read by the UI: invite lobby ids, and library share links
+/// in their `sigf://library/...` form. The UI drains it on start and on every `link://open` event, so a link that
+/// arrives before the webview listens is never lost.
 static PENDING_LINKS: Mutex<Vec<String>> = Mutex::new(Vec::new());
 
 /// The player's own copies found or picked for a recipe (`own_copies`), by (recipe id, game): only the core ever holds
@@ -49,6 +51,7 @@ fn remember_pick(recipe_id: &str, game: &str, src: install::byo::OwnSource) {
 static SCANNED_DIRS: Mutex<Vec<std::path::PathBuf>> = Mutex::new(Vec::new());
 
 fn remember_scan(s: &scan::Scan) {
+    workshop::remember_scan(s);
     *SCANNED_DIRS.lock().unwrap_or_else(|p| p.into_inner()) = s.games.iter().filter_map(|g| g.install_dir.as_ref().map(Into::into)).collect();
 }
 
@@ -287,11 +290,12 @@ struct ApiAnswer {
     body: String,
 }
 
-/// Calls `/api/app/lobbies*` on sigf.ai: GET, POST or DELETE, an optional JSON body and host secret. Nothing else.
+/// Calls the sigf.ai app API: `/api/app/lobbies*` (GET, POST or DELETE, an optional JSON body and host secret) and
+/// the Workshop proxy `/api/app/workshop/*` (GET only). Nothing else.
 #[tauri::command]
 async fn lobby_api(method: String, path: String, body: Option<String>, secret: Option<String>) -> Result<ApiAnswer, String> {
-    if !lobby_path_ok(&path) {
-        return Err(format!("refused lobby path: {path}"));
+    if !lobby_path_ok(&method, &path) {
+        return Err(format!("refused app API path: {method} {path}"));
     }
     if !privacy::lobby_call_ok(&privacy::current(), &path) {
         return Err("privacy: this lobby request is turned off".into());
@@ -318,10 +322,15 @@ async fn lobby_api(method: String, path: String, body: Option<String>, secret: O
     .map_err(|e| e.to_string())?
 }
 
-/// A lobby API path the UI may call: `/api/app/lobbies`, `/api/app/lobbies/hosting`, a lobby id (`[a-km-z2-9]{12}`, the
-/// invite alphabet) with an optional `heartbeat` / `recipe` / `server` / `world`, or the list with a plain query. Checked
-/// whole, before any URL is built, so no `..`, `%2e` or `%2f` can reach another sigf.ai path.
-fn lobby_path_ok(path: &str) -> bool {
+/// A sigf.ai app API path the UI may call (lobbies and workshop): `/api/app/lobbies`, `/api/app/lobbies/hosting`, a lobby
+/// id (`[a-km-z2-9]{12}`, the invite alphabet) with an optional `heartbeat` / `recipe` / `server` / `world`, or the list
+/// with a plain query; with GET also `/api/app/workshop/browse` and `/items` with a plain query and
+/// `/api/app/workshop/collection/<id>`. Checked whole, before any URL is built, so no `..`, `%2e` or `%2f` can reach
+/// another sigf.ai path.
+fn lobby_path_ok(method: &str, path: &str) -> bool {
+    if let Some(rest) = path.strip_prefix("/api/app/workshop/") {
+        return method == "GET" && workshop_path_ok(rest);
+    }
     const BASE: &str = "/api/app/lobbies";
     let Some(rest) = path.strip_prefix(BASE) else { return false };
     if rest.is_empty() || rest == "/hosting" {
@@ -334,6 +343,18 @@ fn lobby_path_ok(path: &str) -> bool {
     let Some(rest) = rest.strip_prefix('/') else { return false };
     let (id, tail) = rest.split_once('/').unwrap_or((rest, ""));
     join::parse_link(id).as_deref() == Some(id) && ["", "heartbeat", "recipe", "server", "world"].contains(&tail)
+}
+
+/// The part after `/api/app/workshop/`: `browse` or `items` with an optional query in the characters the UI's
+/// URLSearchParams and id lists write, or `collection/<published file id>`.
+fn workshop_path_ok(rest: &str) -> bool {
+    if let Some(id) = rest.strip_prefix("collection/") {
+        return workshop::valid_item_id(id);
+    }
+    let (route, query) = rest.split_once('?').unwrap_or((rest, ""));
+    ["browse", "items"].contains(&route)
+        && query.len() <= 2500
+        && query.bytes().all(|b| b.is_ascii_alphanumeric() || b"=&%,*+/._-".contains(&b))
 }
 
 /// This PC's LAN address (the route to the internet's interface), for a host's default join address. No packet is
@@ -396,22 +417,22 @@ async fn bug_report(app: tauri::AppHandle, input: report::ReportInput) -> Result
     tauri::async_runtime::spawn_blocking(move || report::make(&input, &version)).await.map_err(|e| e.to_string())
 }
 
-/// Invite links received since the last call (lobby ids, already checked).
+/// Links received since the last call, already checked: lobby ids, and library links (`sigf://library/...`).
 #[tauri::command]
 fn take_links() -> Vec<String> {
     std::mem::take(&mut *PENDING_LINKS.lock().unwrap_or_else(|p| p.into_inner()))
 }
 
 fn receive_links(app: &tauri::AppHandle, urls: impl IntoIterator<Item = String>) {
-    let ids: Vec<String> = urls.into_iter().filter_map(|u| join::parse_link(&u)).collect();
-    if ids.is_empty() {
+    let links: Vec<String> = urls.into_iter().filter_map(|u| join::parse_link(&u).or_else(|| workshop::parse_library_link(&u).map(|l| l.to_link()))).collect();
+    if links.is_empty() {
         return;
     }
     {
         let mut pending = PENDING_LINKS.lock().unwrap_or_else(|p| p.into_inner());
-        for id in ids {
-            if !pending.contains(&id) {
-                pending.push(id);
+        for link in links {
+            if !pending.contains(&link) {
+                pending.push(link);
             }
         }
     }
@@ -561,7 +582,7 @@ fn start_game(app: &tauri::AppHandle, id: &str, g: &install::InstalledGame, star
         Start::Prism(..) | Start::Store => {}
     }
     let Some((store, store_id, uri)) = store else { return Ok(()) };
-    if store == "steam" && !(!store_id.is_empty() && store_id.len() <= 10 && store_id.bytes().all(|b| b.is_ascii_digit())) {
+    if store == "steam" && !workshop::valid_appid(store_id) {
         return Err(format!("bad Steam app id for {}", g.game));
     }
     let target = if store == "steam" && !args.is_empty() {
@@ -718,7 +739,9 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             scan_games, steam_lookup, launch, install, own_copies_find, own_copy_pick, restore, installed, fetch_text, play, join_lobby, lobby_api, lan_address,
             take_links, minecraft_players, hosted_list, hosted_save, hosted_forget, privacy_get, privacy_set, app_platform, bug_report,
-            update::update_check, update::update_blocked, update::update_install
+            update::update_check, update::update_blocked, update::update_install,
+            workshop::workshop_subscribe, workshop::workshop_unsubscribe, workshop::workshop_state, workshop::libraries_list, workshop::libraries_save,
+            workshop::libraries_delete
         ])
         .run(tauri::generate_context!())
         .expect("error while running the SIGF app");
@@ -741,7 +764,7 @@ mod tests {
             "/api/app/lobbies/k3m9xq2wa7fd/server",
             "/api/app/lobbies/k3m9xq2wa7fd/world",
         ] {
-            assert!(lobby_path_ok(ok), "{ok}");
+            assert!(lobby_path_ok("GET", ok), "{ok}");
         }
         for bad in [
             "/api/app/lobbies/%2e%2e/catalog",
@@ -761,8 +784,48 @@ mod tests {
             "https://evil.example/api/app/lobbies",
             "//evil.example/api/app/lobbies",
         ] {
-            assert!(!lobby_path_ok(bad), "{bad}");
+            assert!(!lobby_path_ok("GET", bad), "{bad}");
         }
+    }
+
+    #[test]
+    fn workshop_paths() {
+        for ok in [
+            "/api/app/workshop/browse",
+            "/api/app/workshop/browse?appid=440&sort=trend&q=red+hat%20x&cursor=AoJ4*%2Fx%2B%3D&tag=Maps",
+            "/api/app/workshop/browse?appid=440&cursor=AoJ4/x+=",
+            "/api/app/workshop/items?ids=3012345678,2987654321",
+            "/api/app/workshop/collection/3012345678",
+        ] {
+            assert!(lobby_path_ok("GET", ok), "{ok}");
+            assert!(!lobby_path_ok("POST", ok), "POST {ok}");
+            assert!(!lobby_path_ok("DELETE", ok), "DELETE {ok}");
+        }
+        assert!(lobby_path_ok("GET", &format!("/api/app/workshop/items?ids={}", "1".repeat(2496))));
+        for bad in [
+            "/api/app/workshop",
+            "/api/app/workshop/",
+            "/api/app/workshop/other",
+            "/api/app/workshop/browsex",
+            "/api/app/workshop/browse/",
+            "/api/app/workshop/browse/../../admin",
+            "/api/app/workshop/%2e%2e/admin",
+            "/api/app/workshop/browse?q=a b",
+            "/api/app/workshop/browse?q=a#frag",
+            "/api/app/workshop/browse?q=a?b",
+            "/api/app/workshop/browse?q=<script>",
+            "/api/app/workshop/items?ids=1;2",
+            "/api/app/workshop/collection/",
+            "/api/app/workshop/collection/0123",
+            "/api/app/workshop/collection/12a",
+            "/api/app/workshop/collection/1/2",
+            "/api/app/workshop/collection/1?x=1",
+            "/api/app/workshop/collection/../../admin",
+            "/api/app/workshopx/browse",
+        ] {
+            assert!(!lobby_path_ok("GET", bad), "{bad}");
+        }
+        assert!(!lobby_path_ok("GET", &format!("/api/app/workshop/items?ids={}", "1".repeat(2501))));
     }
 
     #[test]

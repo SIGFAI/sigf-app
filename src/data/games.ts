@@ -23,7 +23,7 @@ const GENERATED = new Set(['minecraft', 'fortnite', 'jetpackjoyride', 'diablo', 
 const steamArt = (id: string) => `https://cdn.cloudflare.steamstatic.com/steam/apps/${id}/library_600x900.jpg`;
 const steamWide = (id: string) => `https://cdn.cloudflare.steamstatic.com/steam/apps/${id}/header.jpg`;
 // 1920x620 key art without the logo: what mashup covers are made of.
-const steamHero = (id: string) => `https://cdn.cloudflare.steamstatic.com/steam/apps/${id}/library_hero.jpg`;
+export const steamHero = (id: string) => `https://cdn.cloudflare.steamstatic.com/steam/apps/${id}/library_hero.jpg`;
 
 export const GAMES: CanonGame[] = [
   { id: 'gta5', name: 'Grand Theft Auto V', short: 'GTA V', steam: ['271590', '3240220'], epic: /^9d2d0eb64d5c44529cece33fe2a46482$/i, store: 'https://store.steampowered.com/app/3240220' },

@@ -1,0 +1,20 @@
+[package]
+name = "sigf-steam"
+version = "0.1.0"
+edition = "2021"
+description = "SIGF Steam helper: subscribes to Steam Workshop items through the player's running Steam client"
+license = "AGPL-3.0-only"
+repository = "https://github.com/SIGFAI/sigf-app"
+publish = false
+
+# Its own crate, outside the app's build: SIGF.exe never links steam_api64.dll (docs/WORKSHOP.md section 1).
+[workspace]
+
+[dependencies]
+steamworks = "0.13.1"
+serde_json = "1"
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true

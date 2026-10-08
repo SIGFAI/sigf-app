@@ -51,6 +51,17 @@ export function Library({ ctx }: { ctx: Ctx }) {
                         {t('lib.mixAsHost')}
                       </button>
                     )}
+                    {g.store === 'steam' && ctx.workshopOn && (
+                      g.canon ? (
+                        <button className="ghost" onClick={() => ctx.workshop(g.storeId)} title={t('ws.workshopTitle')} aria-label={t('ws.workshopTitle')}>
+                          <Icon name="workshop" size={13} />
+                        </button>
+                      ) : (
+                        <button onClick={() => ctx.workshop(g.storeId)} title={t('ws.workshopTitle')}>
+                          <Icon name="workshop" size={12} /> {t('nav.workshop')}
+                        </button>
+                      )
+                    )}
                     {g.launch && (
                       <button className="ghost" onClick={() => launchGame(g.launch!)} title={t('lib.launchVanilla')} aria-label={t('lib.launchVanilla')}>
                         <Icon name="play" size={12} />

@@ -62,6 +62,10 @@ jobs:
       - name: Install JS dependencies and build the UI (generate_context! needs dist/)
         run: npm ci && npm run build
 
+      # tauri.windows.conf.json bundles these two as resources: the app crate does not build (even for tests) without them.
+      - name: Build the Steam helper (sigf-steam.exe + steam_api64.dll, installed next to SIGF.exe)
+        run: node steam-helper/build.mjs
+
       - name: Test
         run: cargo test --locked --manifest-path src-tauri/Cargo.toml
 

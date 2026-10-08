@@ -124,6 +124,11 @@ export function Icon({ name, size = 20 }: { name: string; size?: number }) {
     sound: (<><path d="M4 9.5h3.5L12 6v12l-4.5-3.5H4z" /><path d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11" /></>),
     muted: (<><path d="M4 9.5h3.5L12 6v12l-4.5-3.5H4z" /><path d="M16 9.5l5 5M21 9.5l-5 5" /></>),
     bug: (<><rect x="7.5" y="8" width="9" height="12" rx="4.5" /><path d="M12 12v8M9 5.5l1.5 2.5M15 5.5L13.5 8M4 13h3.5M16.5 13H20M5 8.5l2.8 1.6M19 8.5l-2.8 1.6M5 18.5l2.8-1.6M19 18.5l-2.8-1.6" /></>),
+    workshop: (<><path d="M9.5 4h5v3a1.75 1.75 0 1 0 3.5 0V4H20v5.5h-2.5a1.75 1.75 0 1 0 0 3.5H20V20h-5.5v-2.5a1.75 1.75 0 1 0-3.5 0V20H4v-5.5h2.5a1.75 1.75 0 1 0 0-3.5H4V4h5.5z" /></>),
+    stack: (<><path d="M12 4l8 4-8 4-8-4z" /><path d="M4 12l8 4 8-4" /><path d="M4 16l8 4 8-4" /></>),
+    up: <path d="M6 15l6-6 6 6" />,
+    down: <path d="M6 9l6 6 6-6" />,
+    trash: (<><path d="M5 7h14M10 7V5h4v2M7 7l1 12h8l1-12" /></>),
     ext: (<><path d="M14 4h6v6M20 4l-9 9" /><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" /></>),
   };
   return (

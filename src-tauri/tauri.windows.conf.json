@@ -1,0 +1,12 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "build": {
+    "beforeBuildCommand": "node steam-helper/build.mjs && npm run build"
+  },
+  "bundle": {
+    "resources": {
+      "../steam-helper/target/release/sigf-steam.exe": "sigf-steam.exe",
+      "../steam-helper/target/release/steam_api64.dll": "steam_api64.dll"
+    }
+  }
+}

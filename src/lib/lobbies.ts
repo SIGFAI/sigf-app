@@ -310,6 +310,9 @@ export async function onInviteLinks(cb: (id: string) => void): Promise<() => voi
   if (!inTauri) {
     const id = parseInvite(new URLSearchParams(location.search).get('join') ?? '');
     if (id) setTimeout(() => cb(id), 600);
+    // `?link=<sigf://library/...>`: a Workshop library link, as the core would hand it over.
+    const link = new URLSearchParams(location.search).get('link');
+    if (link) setTimeout(() => cb(link), 600);
     return () => {};
   }
   const drain = async () => (await invoke<string[]>('take_links')).forEach(cb);

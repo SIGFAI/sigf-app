@@ -1,6 +1,6 @@
 [package]
 name = "sigf-app"
-version = "0.1.2"
+version = "0.1.3"
 edition = "2021"
 description = "SIGF: install game mashups in one click, and put every game back with Restore vanilla"
 license = "AGPL-3.0-only"

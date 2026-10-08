@@ -18,6 +18,15 @@ All three are licensed under the SIL Open Font License, Version 1.1, reproduced 
 `public/licenses/OFL-1.1.txt` (copied into the built UI). The license is also available
 with a FAQ at https://openfontlicense.org.
 
+## Steamworks SDK redistributable (Windows)
+
+The Windows installer ships `steam_api64.dll`, the redistributable library of the Steamworks SDK, next to
+`sigf-steam.exe` (the Steam Workshop helper, `steam-helper/`). Copyright Valve Corporation. It is not open source: it is
+distributed under the Steamworks SDK Access Agreement (https://partner.steamgames.com/documentation/sdk_access_agreement),
+which allows shipping the SDK's redistributable files with an application. It comes from the
+[`steamworks-sys`](https://crates.io/crates/steamworks-sys) crate (MIT/Apache-2.0 bindings), which bundles the SDK's
+`redistributable_bin`. Only the helper loads it, in its own process; `SIGF.exe` never links or loads it.
+
 ## Rust crates and npm packages
 
 The Rust crates (`src-tauri/Cargo.lock`) and npm packages (`package-lock.json`) the app is built from are open source
