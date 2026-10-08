@@ -61,5 +61,11 @@ people's data, and do not degrade sigf.ai for other players.
 
 ## Supported versions
 
-Only the latest release gets security fixes. The app does not update itself: download the latest installer from the
+Only the latest release gets security fixes. The app checks GitHub for a new release after its privacy screen and then
+every 6 hours, and shows "SIGF x.y.z is available". It installs an update only when you click **Update and restart**,
+and only if the downloaded file carries a valid minisign signature from SIGF's release key (the public key is built
+into the app, and the signature covers the version announced). You can also download the latest installer from the
 Releases page.
+
+The updater and its release signing are in scope: for example an update that installs without a valid signature, or
+a way to make the app install an older or different release.

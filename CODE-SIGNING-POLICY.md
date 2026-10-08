@@ -9,11 +9,14 @@ by the workflow below but are **not code-signed**, and this page describes the p
 ## What we sign
 
 - We sign only files built from the source code in this repository,
-  [SIGFAI/sigf-app](https://github.com/SIGFAI/sigf-app): the SIGF app (`sigf-app.exe`) and its Windows installer
-  (`SIGF_<version>_x64-setup.exe`).
+  [SIGFAI/sigf-app](https://github.com/SIGFAI/sigf-app): the SIGF app (`SIGF.exe`) and its Windows installer
+  (published as `SIGF-Setup-<version>.exe`).
 - Every signed file is built by the release workflow in
   [`.github/workflows/release.yml`](.github/workflows/release.yml), on GitHub-hosted runners, from a tagged commit.
   Nothing built on a personal computer is ever signed.
+- Separately from Authenticode, releases carry an updater signature (minisign, `.sig`) made over the final installer
+  and the macOS update archive (after the Authenticode signing above). Installed apps accept an update only with a
+  valid signature from the project's release key.
 - Every release needs a manual approval in SignPath by one of the approvers below before it is signed.
 - We do not sign third-party software. Mods and game files that the app downloads at run time are not signed by us and
   are not part of the signed installer.
@@ -38,8 +41,8 @@ All committers, reviewers and approvers use multi-factor authentication on GitHu
 
 The full privacy policy is [docs/PRIVACY.md](docs/PRIVACY.md), also at [sigf.ai/privacy](https://sigf.ai/privacy). In
 short: the app has no account, no ads, no telemetry, no analytics and no crash reports, and no machine or install id.
-It sends information to other networked systems only to show you the catalog, pictures and lobbies, and to install and
-play what you choose:
+It sends information to other networked systems only to show you the catalog, pictures and lobbies, to tell you about
+new versions of the app, and to install and play what you choose:
 
 - **sigf.ai:** the mashup catalog at start (no identifier, no cookie; the only request before the first-launch privacy
   screen), the list of mashups being built and the free hosted server regions, a mashup's recipe when you install it,
@@ -50,6 +53,9 @@ play what you choose:
   me" (the default is "Ask each time"); anyone with the invite link can see it. sigf.ai keeps a salted hash
   (HMAC-SHA256 under a server-side secret) of your IP address with a lobby to limit abuse. sigf.ai runs behind
   Cloudflare.
+- **GitHub (update check):** after the privacy screen and every 6 hours, a request for the latest release's
+  `latest.json` (no identifier). An update downloads only when you click "Update and restart", and installs only if
+  it carries a valid minisign signature from the project's release key.
 - **GitHub and Modrinth's CDN:** file downloads when you install a mashup or join a lobby.
 - **Steam, Epic Games and Modrinth image servers:** pictures of the games and mashups on screen (optional). For a game
   with no picture, the app sends the game's name to the Steam store search (optional).

@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security issue
+    url: https://github.com/SIGFAI/sigf-app/security/advisories/new
+    about: "Security issues: use private vulnerability reporting, never a public issue (see SECURITY.md)."
+  - name: Bug in a mod itself
+    url: https://sigf.ai
+    about: Gameplay bugs in a mod belong to the mod's author; each catalog card links to its bug tracker.

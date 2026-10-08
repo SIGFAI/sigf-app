@@ -1,7 +1,21 @@
-# Keeps the SHA-pinned actions in .github/workflows/ current.
+# Keeps the SHA-pinned actions, the npm packages and the Rust crates current. A Tauri CLI bump in package-lock.json
+# also needs TAURI_CLI_VERSION in .github/workflows/release.yml (the release fails early if they differ).
 version: 2
 updates:
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
+    open-pull-requests-limit: 3
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+  - package-ecosystem: cargo
+    directories:
+      - /src-tauri
+      - /steam-helper
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3

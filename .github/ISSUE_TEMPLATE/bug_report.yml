@@ -1,0 +1,51 @@
+name: Bug report
+description: Something in the SIGF app does not work as expected.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Security issues: use [private vulnerability reporting](https://github.com/SIGFAI/sigf-app/security/advisories/new), never a public issue.**
+
+        The app's **Report a bug** button (a mashup's page, the Installs tab, or Privacy > Report an app bug) writes a report with the details below; you can paste it here. Check it first: remove anything you do not want to make public.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open ...
+        2. Click ...
+  - type: input
+    id: version
+    attributes:
+      label: SIGF version
+      placeholder: "0.1.3"
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Windows 11
+        - Windows 10
+        - macOS (Apple Silicon)
+        - macOS (Intel)
+    validations:
+      required: true
+  - type: input
+    id: mashup
+    attributes:
+      label: Mashup and games involved (if any)
+  - type: textarea
+    id: report
+    attributes:
+      label: Report from the app, logs or screenshots
+      render: text

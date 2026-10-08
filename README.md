@@ -38,12 +38,17 @@ SIGF is not affiliated with any game publisher or store. Game names and art belo
 - Install only into the game folders its own scan found.
 - Ask before acting on an invite link: it shows the mashup and version, the games it will change, the server address
   and the host's name, and does nothing until you click Join.
+- Check GitHub for a new version of SIGF after the privacy screen and then every 6 hours (a plain request for
+  `latest.json` on the latest release, no identifier). It downloads and installs an update only when you click
+  **Update and restart**, and only if the file carries a valid signature from SIGF's release key (minisign, checked
+  against the public key built into the app, for the version announced).
 - Start games only through `steam://`, Epic, Ubisoft and GOG Galaxy links, Prism Launcher, or a loader `.exe` that sits
   inside the game's own folder.
 
 **It doesn't:**
 
-- collect telemetry, analytics or crash reports, show ads, or check for updates;
+- collect telemetry, analytics or crash reports, or show ads;
+- update itself without asking: an update installs only when you click it;
 - need an account;
 - ask for administrator rights, or install any service, driver, scheduled task, startup entry, firewall rule or
   antivirus exclusion;
@@ -79,6 +84,7 @@ section, is [docs/PRIVACY.md](docs/PRIVACY.md) (also at [sigf.ai/privacy](https:
 | Pictures on screen | Steam, Epic Games and Modrinth image servers | Image requests for game, mashup and creator pictures, so these servers can tell which games are on your screen. | **Yes**: "Game pictures" (off: plain colored tiles; pictures already in Steam's own cache on your PC still show, read from disk) |
 | A game has no picture (some Ubisoft, GOG and Epic games) | Steam store search | **The game's name**, to find its picture. The answer is cached on your PC. | **Yes**: "Find missing pictures on Steam" (also off when "Game pictures" is off) |
 | Lobbies tab or a mashup's "Play with friends" panel open, every 10 seconds | `sigf.ai` | The ids of the games you own, among the games SIGF has mashups for, so you see only lobbies you can join. | **Yes**: "Lobbies for the games I own" (off: the app gets every public lobby and picks yours on your PC) |
+| App start, after the privacy screen, then every 6 hours | GitHub (`github.com` and its release file servers) | An update check: a request for the latest release's `latest.json`. No identifier. The update itself downloads from the same release only when you click "Update and restart", and installs only if it carries SIGF's release signature. | No (GitHub sees your IP address, like any request) |
 | Installing a mashup or joining a lobby | `sigf.ai`, then GitHub release servers and Modrinth's CDN | The mashup's recipe, then plain file downloads. Like any download, these servers see your IP address. | You asked for the install |
 | Opening an invite link | `sigf.ai` | The lobby id, to show you the lobby before you confirm the join. | You asked to join |
 | Hosting a lobby | `sigf.ai` | Your display name, the lobby mode, the player limit, the join address, and the player count (every 30 seconds). **Your PC's local network (LAN) address goes into the join address only when you click "Use my LAN address"**, or by itself if you chose "Fill in for me" (the default is "Ask each time"). Anyone with the invite link can see the address; a public lobby list never shows it. sigf.ai keeps a salted hash of your IP address with the lobby to limit abuse. | Do not host |
@@ -118,14 +124,14 @@ it. General questions that are not sensitive: [issues](https://github.com/SIGFAI
 ## Verify a release
 
 Every release is built by GitHub Actions from a tagged commit of this repository. Each release has a `SHA256SUMS` file
-and a signed build provenance attestation.
+and a signed build provenance attestation covering every file it lists.
 
 ```powershell
 # 1. The file was built by this repository's release workflow
-gh attestation verify SIGF_0.1.0_x64-setup.exe --repo SIGFAI/sigf-app
+gh attestation verify SIGF-Setup-0.1.0.exe --repo SIGFAI/sigf-app
 
 # 2. The hash matches SHA256SUMS
-Get-FileHash -Algorithm SHA256 .\SIGF_0.1.0_x64-setup.exe
+Get-FileHash -Algorithm SHA256 .\SIGF-Setup-0.1.0.exe
 ```
 
 On a Mac:
@@ -137,6 +143,14 @@ shasum -a 256 SIGF-0.1.0-mac.dmg
 
 Replace `0.1.0` with the version you downloaded. Step 1 needs the [GitHub CLI](https://cli.github.com/). It proves where
 and how the file was built, not that the code is bug-free.
+
+Each release also carries:
+
+- (releases after 0.1.3) `THIRD_PARTY_LICENSES.txt`, the licenses of the third-party code built into the app, and an SBOM (a `.json` file
+  listing every bundled npm package and Rust crate with its version). Both are in `SHA256SUMS` and the attestation.
+- `latest.json` and a `.sig` file next to the installer and the macOS update archive: what installed apps read to
+  update. The app installs an update only if its `.sig` verifies against the public key in
+  `src-tauri/tauri.conf.json` (`plugins.updater.pubkey`).
 
 Releases are not code-signed yet: Windows SmartScreen may warn before the first run. Signing through SignPath
 Foundation is planned; see the [code signing policy](CODE-SIGNING-POLICY.md).
@@ -223,8 +237,9 @@ The app is built with [Tauri 2](https://tauri.app/) (Rust core, React + TypeScri
 
 ## Contributing
 
-Issues and pull requests are welcome. By contributing, you agree that your contribution is licensed under the
-AGPL-3.0. Every change is reviewed by a maintainer before it is merged.
+Issues and pull requests are welcome: see [CONTRIBUTING.md](CONTRIBUTING.md). By contributing, you agree that your
+contribution is licensed under the AGPL-3.0. Every change is reviewed by a maintainer before it is merged. Everyone
+taking part follows the [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## License
 
