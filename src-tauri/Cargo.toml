@@ -37,7 +37,7 @@ tungstenite = { version = "0.28", default-features = false, features = ["handsha
 rustls = { version = "0.23", default-features = false, features = ["aws_lc_rs", "std"] }
 rustls-platform-verifier = "0.7"
 uuid = { version = "1", features = ["v4"] }
-base64 = "0.22"
+base64 = "0.23"
 # Scrubbing bug reports (src/report.rs).
 regex = "1"
 # In-app updates, signed with the release key (tauri.conf.json plugins.updater; src/update.rs).
