@@ -90,6 +90,7 @@ const now = () => new Date().toISOString();
 const SAMPLE: PublicLobby[] = [
   { id: 'k3m9xq2wa7fd', mashup: { id: 'sigf/example-passthrough', version: '1.0.0', name: 'Example Passthrough' }, games: ['gta5', 'minecraft'], host: 'nightowl', mode: 'public', players: 6, maxPlayers: 20, state: 'open', createdAt: now() },
   { id: 'p8r2tz4hc6vb', mashup: { id: 'example/skyrim-minecraft', version: '1.2.0', name: 'Example Fusion' }, games: ['skyrim', 'minecraft'], host: 'Dovah K', mode: 'public', players: 41, maxPlayers: 100, state: 'open', createdAt: now() },
+  { id: 'h4c8vt2nb7xe', mashup: { id: 'sigf/example-lethal-mod', version: '0.4.0', name: 'Example Crew Mod' }, games: ['lethal'], host: 'quota_or_bust', mode: 'public', players: 3, maxPlayers: 8, state: 'open', createdAt: now() },
   { id: 'w5n7jq3es9ga', mashup: { id: 'sigf/example-tf2-mod', version: '0.3.1', name: 'Example Mod' }, games: ['tf2'], host: 'medic_main', mode: 'public', players: 12, maxPlayers: 12, state: 'full', createdAt: now() },
 ];
 const fakeLobby = (p: PublicLobby, targets: Target[] = []): Lobby => ({

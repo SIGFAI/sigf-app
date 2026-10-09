@@ -1,6 +1,6 @@
 [package]
 name = "sigf-app"
-version = "0.1.3"
+version = "0.1.4"
 edition = "2021"
 description = "SIGF: install game mashups in one click, and put every game back with Restore vanilla"
 license = "AGPL-3.0-only"
@@ -16,7 +16,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["protocol-asset"] }
+tauri = { version = "2", features = ["protocol-asset", "unstable"] }
 tauri-plugin-opener = "2"
 tauri-plugin-deep-link = "2"
 # A sigf:// click while the app runs focuses it and forwards the link (docs/RECIPE-FORMAT.md 9.2).
@@ -26,8 +26,17 @@ serde_json = "1"
 reqwest = { version = "0.13.5", default-features = false, features = ["blocking", "rustls"] }
 sha2 = "0.11.0"
 zip = { version = "8.6.0", default-features = false, features = ["deflate"] }
+# 7z mod archives (src/install/archive.rs): pure Rust, Apache-2.0; decoders only (no AES: encrypted archives are refused).
+sevenz-rust2 = { version = "=0.20.2", default-features = false, features = ["bzip2", "ppmd", "deflate"] }
 thiserror = "2"
 sha1 = "0.11.0"
+# Mod plans: md5 is the only hash some sources give (src/mods.rs, docs/GAME-HUB.md section 5).
+md-5 = "0.11"
+# Nexus Mods SSO (src/mods.rs): a blocking websocket on the rustls the app already ships, with the system's roots.
+tungstenite = { version = "0.28", default-features = false, features = ["handshake", "__rustls-tls"] }
+rustls = { version = "0.23", default-features = false, features = ["aws_lc_rs", "std"] }
+rustls-platform-verifier = "0.7"
+uuid = { version = "1", features = ["v4"] }
 base64 = "0.22"
 # Scrubbing bug reports (src/report.rs).
 regex = "1"
@@ -50,3 +59,5 @@ strip = true
 
 [dev-dependencies]
 tempfile = "3.27.0"
+# 7z fixtures written by the tests (src/install/archive.rs).
+sevenz-rust2 = { version = "=0.20.2", default-features = false, features = ["compress"] }

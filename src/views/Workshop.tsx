@@ -1,27 +1,29 @@
-// Steam Workshop (docs/WORKSHOP.md): a hub (every library, every Steam game) and a page per game (browse, subscribed,
-// libraries), the item sheet, the library sheet and the import sheet. Nothing is subscribed without a click.
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import type { Ctx, WorkshopNav } from '../App';
-import { GAMES, steamHero } from '../data/games';
-import { copyText, launchGame, openUrl, type Game } from '../lib/api';
+// The Steam Workshop part of the game page (docs/WORKSHOP.md) and the pieces every tab shares: the page context, item
+// previews, error text, the add-to-library menu, libraries (rows, sheet, import) across sources (docs/GAME-HUB.md
+// section 6). The game page itself, the hub and the Mods tab are in views/Game.tsx. Nothing is subscribed or installed
+// without a click.
+import { createContext, useContext, useEffect, useRef, useState } from 'react';
+import type { Ctx } from '../App';
+import type { GameInfo } from './Game';
+import { GAME, GAMES, steamHero } from '../data/games';
+import { copyText, launchGame, openUrl } from '../lib/api';
 import { imageOk, usePrivacy } from '../lib/privacy';
+import { installErrorText } from '../i18n/errors';
 import {
-  MAX_SHARE, STEAM_BLOCKING, STEAM_CLOSED, WorkshopError, applyLibrary, browse, cachedItem, deleteLibrary, fmtBytes, getCollection, getItems, isCode,
-  isSubscribed, newLibrary, parsePasted, readState, removeLibrary, saveLibrary, shareLink, statusOf, steamUrl, subscribe, subscribedIds, unsubscribe,
-  useItems, useLibraries, useWorkshop, type BrowsePage, type Library, type Sort, type Status, type WorkshopItem,
+  MAX_SHARE, STEAM_BLOCKING, STEAM_CLOSED, WorkshopError, browse, deleteLibrary, fmtBytes, getCollection, getItems, isCode, isSubscribed,
+  newLibrary, parsePasted, readState, saveLibrary, shareLink, statusOf, steamUrl, subscribe, subscribedIds, unsubscribe, useItems, useLibraries,
+  useWorkshop, wsIdOf, type BrowsePage, type Library, type Sort, type Status, type WorkshopItem,
 } from '../lib/workshop';
+import {
+  ModsError, SOURCE_NAME, applyLibrary, fromWorkshop, gameKeyOfAppid, getMod, libGame, modGameOf, modStatus, refHave, refItem, removeLibrary,
+  sourceOfRef, useMods, useRefItems, type ModItem, type ModStatus,
+} from '../lib/mods';
 import { GameArt, Icon, fmtCount } from '../ui';
 import { Section } from './shared';
 import { date, day, getLocale, t, type Key } from '../i18n';
 
 // ---------- Shared bits ----------
 
-type Tab = 'browse' | 'subscribed' | 'libraries';
-const TABS: { id: Tab; label: Key }[] = [
-  { id: 'browse', label: 'ws.tabBrowse' },
-  { id: 'subscribed', label: 'ws.tabSubscribed' },
-  { id: 'libraries', label: 'ws.tabLibraries' },
-];
 const SORTS: { id: Sort; label: Key }[] = [
   { id: 'trend', label: 'ws.sortTrend' },
   { id: 'top', label: 'ws.sortTop' },
@@ -29,18 +31,18 @@ const SORTS: { id: Sort; label: Key }[] = [
   { id: 'updated', label: 'ws.sortUpdated' },
 ];
 
-const hash = (s: string) => [...s].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7);
-const bytes = (n?: number) => fmtBytes(n, getLocale());
+export const hash = (s: string) => [...s].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7);
+export const bytes = (n?: number) => fmtBytes(n, getLocale());
 const thisYear = (s: number) => new Date(s * 1000).getFullYear() === new Date().getFullYear();
-/** A Steam time (unix s): "Oct 7" this year, "Mar 10, 2014" before. */
-const when = (s: number) => (thisYear(s) ? day(s * 1000) : date(new Date(s * 1000).toISOString()));
-/** A Steam time, short: "Oct 7" this year, "2014" before. */
-const whenShort = (s: number) => (thisYear(s) ? day(s * 1000) : String(new Date(s * 1000).getFullYear()));
+/** A source's time (unix s): "Oct 7" this year, "Mar 10, 2014" before. */
+export const when = (s: number) => (thisYear(s) ? day(s * 1000) : date(new Date(s * 1000).toISOString()));
+/** A source's time, short: "Oct 7" this year, "2014" before. */
+export const whenShort = (s: number) => (thisYear(s) ? day(s * 1000) : String(new Date(s * 1000).getFullYear()));
 
 /** The rating as a whole percent, when Steam has votes for it. */
 const scorePct = (it: WorkshopItem) => (typeof it.score === 'number' && (it.votesUp ?? 1) + (it.votesDown ?? 0) > 0 ? Math.round(it.score * 100) : null);
 
-/** An item's state on this PC in words (the subscribe button, library rows, requirements). */
+/** A Workshop item's state on this PC in words (the subscribe button, requirements). */
 function statusLabel(s: Status): string {
   switch (s.kind) {
     case 'subscribing': return t('ws.subscribing');
@@ -52,21 +54,41 @@ function statusLabel(s: Status): string {
   }
 }
 
+/** Any item's state on this PC in words (library rows): Workshop items as Steam says, the others as the engine does. */
+export function modStatusLabel(s: ModStatus, ws: boolean): string {
+  switch (s.kind) {
+    case 'planning': return ws ? t('ws.subscribing') : t('mods.preparing');
+    case 'installing': return t(s.phase === 'download' ? 'ws.downloading' : s.phase === 'verify' ? 'mods.checking' : 'mods.installing');
+    case 'nxm': return t('mods.waitingNexus');
+    case 'removing': return t('ws.removing');
+    case 'installed': return t('ws.installed');
+    case 'failed': return t('mods.failed');
+    default: return ws ? t('ws.notSubscribed') : t('mods.notInstalled');
+  }
+}
+
 /** The latest value, for callbacks that must stay the same function across renders. */
-function useLatest<T>(v: T) {
+export function useLatest<T>(v: T) {
   const ref = useRef(v);
   ref.current = v;
   return ref;
 }
 
-/** The scanned Steam game with this app id, if it is on this PC. */
-const steamGame = (ctx: Ctx, appid: string): Game | undefined => ctx.scan?.games.find((g) => g.store === 'steam' && g.storeId === appid);
-/** A game's name for an app id: the scan's, our catalog's, else "Steam app <id>". */
-const gameTitle = (ctx: Ctx, appid: string) =>
-  steamGame(ctx, appid)?.name ?? GAMES.find((g) => g.steam?.includes(appid))?.name ?? t('ws.steamApp', { appid });
+/** A game's name for a game key (`lethal`, `steam:<appid>`): the scan's, our catalog's, the mods map's. */
+export function keyName(ctx: Ctx, key: string): string {
+  const appid = key.startsWith('steam:') ? key.slice(6) : null;
+  const scanned = ctx.scan?.games.find((g) => (appid ? g.store === 'steam' && g.storeId === appid : g.canon === key));
+  return scanned?.name ?? GAME[key]?.name ?? modGameOf(key)?.name ?? (appid ? t('ws.steamApp', { appid }) : key);
+}
 
-/** What the core said, for players. */
-function errorText(e: unknown, game: string): string {
+/** Whether a game (key) is on this PC. */
+export function keyOnPc(ctx: Ctx, key: string): boolean {
+  const appid = key.startsWith('steam:') ? key.slice(6) : null;
+  return !!ctx.scan?.games.some((g) => (appid ? g.store === 'steam' && g.storeId === appid : g.canon === key));
+}
+
+/** What the core or a proxy said, for players. */
+export function errorText(e: unknown, game: string): string {
   if (e instanceof WorkshopError) {
     switch (e.code) {
       case 'steam_not_running': return t('ws.err.steam_not_running');
@@ -81,21 +103,47 @@ function errorText(e: unknown, game: string): string {
       default: return t('ws.err.failed', { message: e.message });
     }
   }
+  if (e instanceof ModsError) {
+    switch (e.code) {
+      case 'install': return installErrorText(e.detail);
+      case 'not_on_pc': return t('mods.err.notOnPc', { game });
+      case 'nexus_unavailable': return t('nx.soonTitle');
+      case 'needs_nexus_login': return t('mods.err.needsNexus');
+      case 'nxm_unknown': return t('mods.err.nxmUnknown');
+      case 'nxm_expired': return t('mods.err.nxmExpired');
+      case 'rate_limited': return t('mods.err.rateLimited');
+      case 'link_only': return t('mods.err.linkOnly');
+      case 'no_mc_version': return t('mods.err.noMcVersion', { profile: e.message });
+      case 'cancelled': return t('mods.err.cancelled');
+      case 'not_found': return t('mods.err.notFound');
+      case 'network': return t('mods.err.network', { error: e.message });
+      case 'source_unavailable':
+      case 'no_source': return t('mods.soon');
+      default: return t('mods.err.failed', { message: e.message });
+    }
+  }
   return t('ws.err.failed', { message: e instanceof Error ? e.message : String(e) });
 }
 
-/** Per game page: who to tell about errors, how to open an item. */
-type Page = {
-  ctx: Ctx; appid: string; game: string;
+/** Per game page: the game, who to tell about errors, how to open an item. */
+export type Page = {
+  ctx: Ctx; g: GameInfo;
+  /** The game's Steam app id ('' when it is not a Steam game on this PC). */
+  appid: string;
+  /** The game's name. */
+  game: string;
   openItem: (it: WorkshopItem) => void;
+  openMod: (it: ModItem) => void;
   /** Steam refusals (not running...) show as a banner on the page; others as a toast. */
   fail: (e: unknown) => void;
-  addTo: (lib: Library | null, ids: string[]) => void;
+  addTo: (lib: Library | null, refs: string[]) => void;
+  /** The Nexus Mods account sheet (log in, "Mod manager download" links). */
+  openNexus: () => void;
 };
-const PageCtx = createContext<Page | null>(null);
-const usePage = () => useContext(PageCtx)!;
+export const PageCtx = createContext<Page | null>(null);
+export const usePage = () => useContext(PageCtx)!;
 
-function useEscape(f: () => void) {
+export function useEscape(f: () => void) {
   const ref = useRef(f);
   ref.current = f;
   useEffect(() => {
@@ -110,11 +158,12 @@ function useEscape(f: () => void) {
   }, []);
 }
 
-/** An item's preview picture, or a generated tile with its title when there is none (or pictures are off). */
-function Preview({ item, className = '' }: { item?: WorkshopItem; className?: string }) {
+type Previewable = { title?: string; preview?: string; icon?: string; id?: string; ref?: string };
+/** An item's picture, or a generated tile with its title when there is none (or pictures are off). */
+export function Preview({ item, className = '' }: { item?: Previewable; className?: string }) {
   const privacy = usePrivacy();
   const [broken, setBroken] = useState(false);
-  const src = item?.preview;
+  const src = item?.preview ?? item?.icon;
   if (src && !broken && imageOk(src, privacy)) {
     return (
       <div className={`art ws-prev ${className}`}>
@@ -123,29 +172,24 @@ function Preview({ item, className = '' }: { item?: WorkshopItem; className?: st
     );
   }
   return (
-    <div className={`art art-gen ws-prev ${className}`} style={{ ['--h' as string]: hash(item?.id ?? '0') % 360 }}>
+    <div className={`art art-gen ws-prev ${className}`} style={{ ['--h' as string]: hash(item?.ref ?? item?.id ?? '0') % 360 }}>
       <span>{item?.title ?? ''}</span>
     </div>
   );
 }
 
-/** The game's wide key art for the page header. */
-function GameHero({ ctx, appid }: { ctx: Ctx; appid: string }) {
-  const g = steamGame(ctx, appid);
+/** A game's wide key art for a page header. */
+export function GameHero({ ctx, gameKey, appid }: { ctx: Ctx; gameKey: string; appid?: string }) {
+  const g = ctx.scan?.games.find((x) => (appid ? x.store === 'steam' && x.storeId === appid : x.canon === gameKey)) ?? ctx.scan?.games.find((x) => x.canon === gameKey);
+  const canon = gameKey.startsWith('steam:') ? g?.canon ?? null : gameKey;
+  const sid = appid || (canon ? GAME[canon]?.steam?.[0] : undefined);
   return (
-    <GameArt
-      hero
-      id={g?.canon ?? null}
-      name={g?.name ?? gameTitle(ctx, appid)}
-      wide={steamHero(appid)}
-      heroLocal={g?.heroLocal}
-      wideLocal={g?.wideLocal}
-    />
+    <GameArt hero id={canon} name={g?.name ?? keyName(ctx, gameKey)} wide={sid ? steamHero(sid) : undefined} heroLocal={g?.heroLocal} wideLocal={g?.wideLocal} />
   );
 }
 
 /** Steam is closed, the helper is missing...: what happened and the one thing to do. */
-function SteamBanner({ error, game, onRetry }: { error: unknown; game: string; onRetry: () => void }) {
+export function SteamBanner({ error, game, onRetry }: { error: unknown; game: string; onRetry: () => void }) {
   const closed = isCode(error, STEAM_CLOSED);
   return (
     <div className="join-error ws-banner">
@@ -157,6 +201,8 @@ function SteamBanner({ error, game, onRetry }: { error: unknown; game: string; o
     </div>
   );
 }
+
+export { STEAM_BLOCKING };
 
 // ---------- Subscribe button ----------
 
@@ -210,9 +256,9 @@ function SubButton({ appid, item, big = false }: { appid: string; item: Workshop
 
 // ---------- Add to library ----------
 
-function AddMenu({ appid, ids, onClose, up = false }: { appid: string; ids: string[]; onClose: () => void; up?: boolean }) {
+export function AddMenu({ refs, onClose, up = false }: { refs: string[]; onClose: () => void; up?: boolean }) {
   const page = usePage();
-  const libs = (useLibraries() ?? []).filter((l) => l.appid === appid);
+  const libs = (useLibraries() ?? []).filter((l) => libGame(l) === page.g.key);
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const away = (e: MouseEvent) => !ref.current?.contains(e.target as Node) && onClose();
@@ -227,26 +273,46 @@ function AddMenu({ appid, ids, onClose, up = false }: { appid: string; ids: stri
     <div className={`ws-menu ${up ? 'ws-menu-up' : ''}`} ref={ref} onClick={(e) => e.stopPropagation()}>
       <small>{t('ws.addToLib')}</small>
       {libs.map((l) => {
-        const has = ids.every((id) => l.items.includes(id));
+        const has = refs.every((id) => l.items.includes(id));
         return (
-          <button key={l.id} disabled={has} onClick={() => { page.addTo(l, ids); onClose(); }}>
+          <button key={l.id} disabled={has} onClick={() => { page.addTo(l, refs); onClose(); }}>
             <span>{l.name}</span>
             {has ? <Icon name="check" size={13} /> : <em>{t('ws.libItems', { count: l.items.length })}</em>}
           </button>
         );
       })}
-      <button className="ws-menu-new" onClick={() => { page.addTo(null, ids); onClose(); }}>
+      <button className="ws-menu-new" onClick={() => { page.addTo(null, refs); onClose(); }}>
         <Icon name="plus" size={13} /> <span>{t('ws.newLibrary')}</span>
       </button>
     </div>
   );
 }
 
-// ---------- Item card ----------
+/** The stack button on a card: add this item to one of the game's libraries. */
+export function AddButton({ refs }: { refs: string[] }) {
+  const [menu, setMenu] = useState(false);
+  return (
+    <div className="ws-add">
+      <button
+        className={`ws-icon ${menu ? 'on' : ''}`}
+        title={t('ws.addToLib')}
+        aria-label={t('ws.addToLib')}
+        onClick={(e) => {
+          e.stopPropagation();
+          setMenu(!menu);
+        }}
+      >
+        <Icon name="stack" size={15} />
+      </button>
+      {menu && <AddMenu refs={refs} onClose={() => setMenu(false)} up />}
+    </div>
+  );
+}
+
+// ---------- Workshop item card ----------
 
 function ItemCard({ item, i }: { item: WorkshopItem; i: number }) {
   const page = usePage();
-  const [menu, setMenu] = useState(false);
   const score = scorePct(item);
   return (
     <article className="ws-card" style={{ ['--i' as string]: i % 30 }} onClick={() => page.openItem(item)}>
@@ -268,27 +334,14 @@ function ItemCard({ item, i }: { item: WorkshopItem; i: number }) {
         </div>
         <div className="ws-card-foot">
           <SubButton appid={page.appid} item={item} />
-          <div className="ws-add">
-            <button
-              className={`ws-icon ${menu ? 'on' : ''}`}
-              title={t('ws.addToLib')}
-              aria-label={t('ws.addToLib')}
-              onClick={(e) => {
-                e.stopPropagation();
-                setMenu(!menu);
-              }}
-            >
-              <Icon name="stack" size={15} />
-            </button>
-            {menu && <AddMenu appid={page.appid} ids={[item.id]} onClose={() => setMenu(false)} up />}
-          </div>
+          <AddButton refs={[item.id]} />
         </div>
       </div>
     </article>
   );
 }
 
-function Skeletons({ n = 12 }: { n?: number }) {
+export function Skeletons({ n = 12 }: { n?: number }) {
   return (
     <>
       {Array.from({ length: n }, (_, i) => (
@@ -303,7 +356,7 @@ function Skeletons({ n = 12 }: { n?: number }) {
 
 // ---------- Browse ----------
 
-function Browse({ onImport, onTab }: { onImport: () => void; onTab: (t: Tab) => void }) {
+function Browse({ onImport, onSubscribed }: { onImport: () => void; onSubscribed: () => void }) {
   const page = usePage();
   const [sort, setSort] = useState<Sort>('trend');
   const [q, setQ] = useState('');
@@ -382,8 +435,7 @@ function Browse({ onImport, onTab }: { onImport: () => void; onTab: (t: Tab) => 
         <p>{t('ws.soonBody')}</p>
         <div className="host-actions">
           <button className="act act-get" onClick={onImport}><Icon name="link" size={14} /> {t('ws.importAction')}</button>
-          <button className="act act-ghost" onClick={() => onTab('subscribed')}>{t('ws.tabSubscribed')}</button>
-          <button className="act act-ghost" onClick={() => onTab('libraries')}>{t('ws.tabLibraries')}</button>
+          <button className="act act-ghost" onClick={onSubscribed}>{t('ws.tabSubscribed')}</button>
         </div>
       </div>
     );
@@ -449,11 +501,11 @@ function Subscribed() {
   const shown = items?.filter((i) => isSubscribed(page.appid, i.id) || statusOf(page.appid, i.id).kind !== 'none');
   const total = (shown ?? []).reduce((s, i) => s + (i.sizeBytes ?? 0), 0);
   return (
-    <Section
-      title={t('ws.tabSubscribed')}
-      sub={t('ws.subscribedSub', { game: page.game })}
-      aside={shown && shown.length > 0 && <span className="ws-count">{t('ws.libItems', { count: shown.length })}{total ? ` · ${bytes(total)}` : ''}</span>}
-    >
+    <>
+      <div className="ws-toolbar">
+        <p className="ws-sub-lede">{t('ws.subscribedSub', { game: page.game })}</p>
+        {shown && shown.length > 0 && <span className="ws-count">{t('ws.libItems', { count: shown.length })}{total ? ` · ${bytes(total)}` : ''}</span>}
+      </div>
       {error ? (
         <SteamBanner error={error} game={page.game} onRetry={() => setN(n + 1)} />
       ) : shown?.length === 0 ? (
@@ -461,14 +513,38 @@ function Subscribed() {
       ) : (
         <div className="ws-grid">{shown ? shown.map((it, i) => <ItemCard key={it.id} item={it} i={i} />) : <Skeletons n={6} />}</div>
       )}
-    </Section>
+    </>
+  );
+}
+
+/** The Workshop tab (Steam games, Windows): browse and what is subscribed, plus Steam's own page. */
+export function WorkshopTab({ onImport }: { onImport: () => void }) {
+  const page = usePage();
+  const [part, setPart] = useState<'browse' | 'subscribed'>('browse');
+  const subCount = useWorkshop(() => subscribedIds(page.appid)?.length);
+  return (
+    <>
+      <div className="ws-subnav">
+        <div className="seg">
+          <button className={part === 'browse' ? 'on' : ''} onClick={() => setPart('browse')}>{t('ws.tabBrowse')}</button>
+          <button className={part === 'subscribed' ? 'on' : ''} onClick={() => setPart('subscribed')}>
+            {t('ws.tabSubscribed')}{subCount !== undefined && <em>{subCount}</em>}
+          </button>
+        </div>
+        <span className="ws-subnav-hint">{t('ws.tabHint')}</span>
+        <button className="act act-ghost" onClick={() => void launchGame(`steam://url/SteamWorkshopPage/${page.appid}`)}>{t('ws.openSteam')} <Icon name="ext" size={12} /></button>
+      </div>
+      <div className="ws-panel" key={part}>
+        {part === 'browse' ? <Browse onImport={onImport} onSubscribed={() => setPart('subscribed')} /> : <Subscribed />}
+      </div>
+    </>
   );
 }
 
 // ---------- Libraries ----------
 
 function libSize(lib: Library) {
-  return lib.items.reduce((s, id) => s + (cachedItem(id)?.sizeBytes ?? 0), 0);
+  return lib.items.reduce((s, r) => s + (refItem(r)?.sizeBytes ?? 0), 0);
 }
 
 /** Library actions with their busy state and toasts; shared by the row and the sheet. */
@@ -477,10 +553,12 @@ function useLibActions(ctx: Ctx, lib: Library, game: string, fail: (e: unknown) 
   const [busy, setBusy] = useState<'apply' | 'remove' | null>(null);
   const apply = async () => {
     setBusy('apply');
-    const before = lib.items.filter((id) => isSubscribed(lib.appid, id)).length;
     try {
-      await applyLibrary(lib);
-      ctx.flash(t('ws.libApplied', { name: lib.name, count: Math.max(0, lib.items.length - before) }));
+      const r = await applyLibrary(lib, ctx.workshopOn);
+      const parts = [t('ws.libApplied', { name: lib.name, count: r.added })];
+      if (r.waiting) parts.push(t('mods.libWaiting', { count: r.waiting }));
+      if (r.failed) parts.push(t('mods.libFailed', { count: r.failed }));
+      ctx.flash(parts.join(' · '));
     } catch (e) {
       fail(e);
     } finally {
@@ -507,8 +585,9 @@ function useLibActions(ctx: Ctx, lib: Library, game: string, fail: (e: unknown) 
 
 function ApplyButton({ lib, busy, apply, remove }: { lib: Library; busy: 'apply' | 'remove' | null; apply: () => void; remove: () => void }) {
   useWorkshop();
+  useMods();
   if (busy === 'apply') {
-    const done = lib.items.filter((id) => statusOf(lib.appid, id).kind === 'installed').length;
+    const done = lib.items.filter((r) => refHave(r, lib.appid)).length;
     return (
       <button className="act act-busy" style={{ ['--p' as string]: `${(done / Math.max(1, lib.items.length)) * 100}%` }} onClick={(e) => e.stopPropagation()}>
         <span>{t('ws.applying', { done, total: lib.items.length })}</span>
@@ -530,24 +609,35 @@ function ApplyButton({ lib, busy, apply, remove }: { lib: Library; busy: 'apply'
   );
 }
 
-function Mosaic({ ids }: { ids: string[] }) {
-  const four = ids.slice(0, 4);
+function Mosaic({ refs }: { refs: string[] }) {
+  const four = refs.slice(0, 4);
   return (
     <div className={`ws-mosaic n${four.length}`}>
-      {four.map((id) => <Preview key={id} item={cachedItem(id) ?? { id, title: '' } as WorkshopItem} />)}
+      {four.map((r) => <Preview key={r} item={refItem(r) ?? { ref: r, title: '' }} />)}
       {!four.length && <Icon name="stack" size={20} />}
     </div>
   );
 }
 
-function LibraryRow({ ctx, lib, i, onOpen, withGame = false, fail }: { ctx: Ctx; lib: Library; i: number; onOpen: () => void; withGame?: boolean; fail: (e: unknown) => void }) {
-  const game = gameTitle(ctx, lib.appid);
+/** The sources a library mixes, as small dots with names (Workshop, Thunderstore, Nexus...). */
+function SourceDots({ refs }: { refs: string[] }) {
+  const set = [...new Set(refs.map(sourceOfRef))];
+  if (set.length < 2) return null;
+  return (
+    <span className="lib-srcs" title={set.map((s) => SOURCE_NAME[s]).join(' · ')}>
+      {set.map((s) => <i key={s} className={`src-dot src-${s}`} />)}
+    </span>
+  );
+}
+
+export function LibraryRow({ ctx, lib, i, onOpen, withGame = false, fail }: { ctx: Ctx; lib: Library; i: number; onOpen: () => void; withGame?: boolean; fail: (e: unknown) => void }) {
+  const game = keyName(ctx, libGame(lib));
   const { busy, apply, remove, share } = useLibActions(ctx, lib, game, fail);
   const size = libSize(lib);
   const from = lib.source?.kind === 'collection' ? t('ws.fromCollection') : lib.source?.kind === 'link' ? t('ws.fromLink') : null;
   return (
     <div className="lobby ws-lib" style={{ ['--i' as string]: i }} onClick={onOpen}>
-      <Mosaic ids={lib.items} />
+      <Mosaic refs={lib.items} />
       <div className="qinfo">
         <b>{lib.name}</b>
         <span>
@@ -555,6 +645,7 @@ function LibraryRow({ ctx, lib, i, onOpen, withGame = false, fail }: { ctx: Ctx;
           {t('ws.libItems', { count: lib.items.length })}
           {size > 0 && ` · ${bytes(size)}`}
           {from && ` · ${from}`}
+          <SourceDots refs={lib.items} />
         </span>
       </div>
       <span className={`ws-state ${lib.applied ? 'on' : ''}`}><i />{lib.applied ? t('ws.applied') : t('ws.notApplied')}</span>
@@ -566,19 +657,19 @@ function LibraryRow({ ctx, lib, i, onOpen, withGame = false, fail }: { ctx: Ctx;
   );
 }
 
-function Libraries({ onEdit, onImport, onNew }: { onEdit: (l: Library) => void; onImport: () => void; onNew: () => void }) {
+export function Libraries({ onEdit, onImport, onNew }: { onEdit: (l: Library) => void; onImport: () => void; onNew: () => void }) {
   const page = usePage();
   const all = useLibraries();
-  const libs = (all ?? []).filter((l) => l.appid === page.appid);
+  const libs = (all ?? []).filter((l) => libGame(l) === page.g.key);
   // Titles and previews for the mosaics.
-  useItems(libs.flatMap((l) => l.items.slice(0, 4)));
+  useRefItems(libs.flatMap((l) => l.items.slice(0, 4)));
   useEffect(() => {
-    readState(page.appid, null).catch(() => {});
+    if (page.appid && page.ctx.workshopOn) readState(page.appid, null).catch(() => {});
   }, [page.appid]);
   return (
     <Section
       title={t('ws.tabLibraries')}
-      sub={t('ws.libsSub')}
+      sub={t('mods.libsSub')}
       aside={
         <div className="host-actions ws-head-actions">
           <button className="act act-ghost" onClick={onImport}><Icon name="link" size={14} /> {t('ws.importAction')}</button>
@@ -589,7 +680,7 @@ function Libraries({ onEdit, onImport, onNew }: { onEdit: (l: Library) => void; 
       {all === null ? (
         <div className="empty">{t('ws.loadingLibs')}</div>
       ) : libs.length === 0 ? (
-        <div className="empty">{t('ws.libsEmpty', { game: page.game })}</div>
+        <div className="empty">{t('mods.libsEmpty', { game: page.game })}</div>
       ) : (
         <div className="queue">{libs.map((l, i) => <LibraryRow key={l.id} ctx={page.ctx} lib={l} i={i} onOpen={() => onEdit(l)} fail={page.fail} />)}</div>
       )}
@@ -599,20 +690,21 @@ function Libraries({ onEdit, onImport, onNew }: { onEdit: (l: Library) => void; 
 
 // ---------- Library sheet ----------
 
-function LibrarySheet({ lib: start, onClose }: { lib: Library; onClose: () => void }) {
+export function LibrarySheet({ lib: start, onClose }: { lib: Library; onClose: () => void }) {
   const page = usePage();
   useWorkshop();
   const libs = useLibraries() ?? [];
   const lib = libs.find((l) => l.id === start.id) ?? start;
   const [name, setName] = useState(lib.name);
-  const items = useItems(lib.items);
+  const items = useRefItems(lib.items);
   const [sure, setSure] = useState(false);
   const { busy, apply, remove, share } = useLibActions(page.ctx, lib, page.game, page.fail);
   useEscape(onClose);
   // Keyed on the set of ids: reordering does not ask Steam again.
-  const idSet = [...lib.items].sort().join();
+  const ws = lib.items.map(wsIdOf).filter((x): x is string => !!x);
+  const idSet = [...ws].sort().join();
   useEffect(() => {
-    readState(lib.appid, lib.items).catch(() => {});
+    if (ws.length && lib.appid && page.ctx.workshopOn) readState(lib.appid, ws).catch(() => {});
   }, [lib.appid, idSet]);
 
   const save = (patch: Partial<Library>) => saveLibrary({ ...lib, ...patch }).catch(page.fail);
@@ -630,7 +722,12 @@ function LibrarySheet({ lib: start, onClose }: { lib: Library; onClose: () => vo
   };
   const drop = (id: string) => void save({ items: lib.items.filter((x) => x !== id), addedByUs: lib.addedByUs.filter((x) => x !== id) });
   const size = items.reduce((s, it) => s + (it?.sizeBytes ?? 0), 0);
-  const have = lib.items.filter((id) => isSubscribed(lib.appid, id)).length;
+  const have = lib.items.filter((r) => refHave(r, lib.appid)).length;
+  const open = (r: string, it?: ModItem) => {
+    const id = wsIdOf(r);
+    if (id) void getItems([id]).then(([x]) => x && page.openItem(x));
+    else if (it) page.openMod(it);
+  };
 
   return (
     <div className="scrim scrim-center" onClick={onClose}>
@@ -651,46 +748,50 @@ function LibrarySheet({ lib: start, onClose }: { lib: Library; onClose: () => vo
           <span className={`ws-state ${lib.applied ? 'on' : ''}`}><i />{lib.applied ? t('ws.applied') : t('ws.notApplied')}</span>
           {t('ws.libItems', { count: lib.items.length })}
           {size > 0 && ` · ${bytes(size)}`}
-          {lib.items.length > 0 && ` · ${t('ws.alreadySub', { count: have })}`}
+          {lib.items.length > 0 && ` · ${t('mods.alreadyHave', { count: have })}`}
         </p>
 
         <ol className="ws-list">
-          {lib.items.map((id, i) => {
+          {lib.items.map((r, i) => {
             const it = items[i];
-            const st = statusOf(lib.appid, id);
+            const isWs = !!wsIdOf(r);
+            const src = sourceOfRef(r);
+            const st = modStatus(r, lib.appid);
             return (
-              <li key={id} style={{ ['--i' as string]: i }}>
+              <li key={r} style={{ ['--i' as string]: i }}>
                 <span className="ws-list-n">{String(i + 1).padStart(2, '0')}</span>
-                <button className="ws-list-item" onClick={() => it && page.openItem(it)}>
-                  <Preview item={it ?? ({ id, title: '' } as WorkshopItem)} />
+                <button className="ws-list-item" onClick={() => open(r, it)}>
+                  <Preview item={it ?? { ref: r, title: '' }} />
                   <span>
-                    <b>{it?.title ?? id}</b>
+                    <b>{it?.title ?? r}</b>
                     <small>
-                      {st.kind === 'installed' ? <em className="ok"><Icon name="check" size={11} /> {statusLabel(st)}</em>
-                        : st.kind === 'downloading' ? <em>{statusLabel(st)}{st.pct !== null ? ` ${Math.round(st.pct)}%` : ''}</em>
-                        : <em className={st.kind === 'none' || st.kind === 'failed' ? 'dim' : ''}>{statusLabel(st)}</em>}
+                      <span className={`src-tag src-${src}`}><i className={`src-dot src-${src}`} />{SOURCE_NAME[src]}</span>
+                      {' · '}
+                      {st.kind === 'installed' ? <em className="ok"><Icon name="check" size={11} /> {modStatusLabel(st, isWs)}</em>
+                        : st.kind === 'installing' ? <em>{modStatusLabel(st, isWs)} {Math.round(st.pct)}%</em>
+                        : <em className={st.kind === 'none' || st.kind === 'failed' ? 'dim' : ''}>{modStatusLabel(st, isWs)}</em>}
                       {it?.sizeBytes ? ` · ${bytes(it.sizeBytes)}` : ''}
-                      {lib.addedByUs.includes(id) && lib.applied ? ` · ${t('ws.addedByLib')}` : ''}
+                      {lib.addedByUs.includes(r) && lib.applied ? ` · ${t('ws.addedByLib')}` : ''}
                     </small>
                   </span>
                 </button>
                 <span className="ws-list-tools">
                   <button onClick={() => move(i, -1)} disabled={i === 0} title={t('ws.moveUp')} aria-label={t('ws.moveUp')}><Icon name="up" size={14} /></button>
                   <button onClick={() => move(i, 1)} disabled={i === lib.items.length - 1} title={t('ws.moveDown')} aria-label={t('ws.moveDown')}><Icon name="down" size={14} /></button>
-                  <button onClick={() => drop(id)} title={t('ws.removeItem')} aria-label={t('ws.removeItem')}><Icon name="x" size={14} /></button>
+                  <button onClick={() => drop(r)} title={t('ws.removeItem')} aria-label={t('ws.removeItem')}><Icon name="x" size={14} /></button>
                 </span>
               </li>
             );
           })}
         </ol>
-        {lib.items.length === 0 && <div className="empty ws-list-empty">{t('ws.libEmptyItems')}</div>}
+        {lib.items.length === 0 && <div className="empty ws-list-empty">{t('mods.libEmptyItems')}</div>}
 
         <div className="ws-sheet-foot">
           {sure ? (
             <span className="ws-sure">
               <button className="act ws-danger" onClick={() => void deleteLibrary(lib.id).then(onClose, page.fail)}>{t('ws.deleteConfirm')}</button>
               <button className="act act-ghost" onClick={() => setSure(false)}>{t('common.cancel')}</button>
-              <small>{lib.applied ? t('ws.deleteHintApplied') : t('ws.deleteHint')}</small>
+              <small>{lib.applied ? t('mods.deleteHintApplied') : t('mods.deleteHint')}</small>
             </span>
           ) : (
             <button className="pv-link" onClick={() => setSure(true)}><Icon name="trash" size={13} /> {t('ws.delete')}</button>
@@ -709,10 +810,10 @@ function LibrarySheet({ lib: start, onClose }: { lib: Library; onClose: () => vo
 
 // ---------- Import sheet ----------
 
-/** `ids`: every id of the list, in order (a shared link may name items the proxy cannot resolve: they are kept). */
-type Resolved = { appid: string; name: string; ids: string[]; items: WorkshopItem[]; source: Library['source'] };
+/** `ids`: every ref of the list, in order (a shared link may name items the proxies cannot resolve: they are kept). */
+type Resolved = { appid: string; key: string; name: string; ids: string[]; items: ModItem[]; source: Library['source'] };
 
-function ImportSheet({ ctx, initial, onClose, onSaved, fail }: {
+export function ImportSheet({ ctx, initial, onClose, onSaved, fail }: {
   ctx: Ctx; initial?: string; onClose: () => void; onSaved: (lib: Library) => void; fail: (e: unknown) => void;
 }) {
   const [text, setText] = useState(initial ?? '');
@@ -722,6 +823,7 @@ function ImportSheet({ ctx, initial, onClose, onSaved, fail }: {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   useWorkshop();
+  useMods();
   useEscape(onClose);
   const run = useRef(0);
 
@@ -735,17 +837,26 @@ function ImportSheet({ ctx, initial, onClose, onSaved, fail }: {
     try {
       let r: Resolved;
       if (p.kind === 'share') {
-        const items = await getItems(p.share.ids);
-        r = { appid: p.share.appid, name: p.share.name || t('ws.sharedName'), ids: p.share.ids, items, source: { kind: 'link' } };
+        const { appid, game, ids } = p.share;
+        const key = game ?? gameKeyOfAppid(appid, ctx.scan?.games.find((g) => g.store === 'steam' && g.storeId === appid)?.canon);
+        const ws = ids.map(wsIdOf).filter((x): x is string => !!x);
+        const wsItems = new Map((await getItems(ws)).map((w) => [w.id, fromWorkshop(w, key)]));
+        const others = await Promise.all(ids.filter((r) => !wsIdOf(r)).map((r) => getMod(r).catch(() => null)));
+        const byRef = new Map(others.filter((x): x is ModItem => !!x).map((x) => [x.ref, x]));
+        const items = ids.map((r) => (wsIdOf(r) ? wsItems.get(wsIdOf(r)!) : byRef.get(r))).filter((x): x is ModItem => !!x);
+        r = { appid: appid || (GAME[key]?.steam?.[0] ?? ''), key, name: p.share.name || t('ws.sharedName'), ids, items, source: { kind: 'link' } };
       } else {
         const c = await getCollection(p.id);
-        r = { appid: c.collection.appid || c.items[0]?.appid || '', name: c.collection.title, ids: c.items.map((i) => i.id), items: c.items, source: { kind: 'collection', id: p.id } };
+        const appid = c.collection.appid || c.items[0]?.appid || '';
+        const key = gameKeyOfAppid(appid, ctx.scan?.games.find((g) => g.store === 'steam' && g.storeId === appid)?.canon);
+        r = { appid, key, name: c.collection.title, ids: c.items.map((i) => i.id), items: c.items.map((w) => fromWorkshop(w, key)), source: { kind: 'collection', id: p.id } };
       }
       if (n !== run.current) return;
       setGot(r);
       setName(r.name);
       setState('idle');
-      if (steamGame(ctx, r.appid)) readState(r.appid, r.items.map((i) => i.id)).catch(() => {});
+      const ws = r.ids.map(wsIdOf).filter((x): x is string => !!x);
+      if (ws.length && r.appid && ctx.workshopOn && keyOnPc(ctx, r.key)) readState(r.appid, ws).catch(() => {});
     } catch (e) {
       if (n !== run.current) return;
       setState('idle');
@@ -756,21 +867,25 @@ function ImportSheet({ ctx, initial, onClose, onSaved, fail }: {
     if (initial) void look(initial);
   }, []);
 
-  const owned = got ? !!steamGame(ctx, got.appid) : false;
-  const game = got ? gameTitle(ctx, got.appid) : '';
-  const have = got ? got.items.filter((i) => isSubscribed(got.appid, i.id)) : [];
-  const toGet = got ? got.items.filter((i) => !isSubscribed(got.appid, i.id)).reduce((s, i) => s + (i.sizeBytes ?? 0), 0) : 0;
+  const owned = got ? keyOnPc(ctx, got.key) : false;
+  const game = got ? keyName(ctx, got.key) : '';
+  const have = got ? got.ids.filter((r) => refHave(r, got.appid)) : [];
+  const toGet = got ? got.items.filter((i) => !refHave(i.ref, got.appid)).reduce((s, i) => s + (i.sizeBytes ?? 0), 0) : 0;
+  // Workshop items need the Steam helper (Windows): elsewhere they stay in the library, unapplied.
+  const wsOnly = got ? got.ids.every((r) => !!wsIdOf(r)) : false;
+  const canApply = owned && (!wsOnly || ctx.workshopOn);
 
   const save = async (andApply: boolean) => {
     if (!got) return;
     setSaving(true);
     try {
-      const lib = newLibrary(got.appid, name.trim().slice(0, 80) || got.name, got.ids, got.source);
+      const canon = got.key.startsWith('steam:') ? undefined : got.key;
+      const lib = newLibrary(got.appid, name.trim().slice(0, 80) || got.name, got.ids, got.source, canon);
       await saveLibrary(lib);
       ctx.flash(t('ws.saved', { name: lib.name }));
       onSaved(lib);
-      if (andApply) void applyLibrary(lib).then(
-        () => ctx.flash(t('ws.libApplied', { name: lib.name, count: Math.max(0, got.ids.length - have.length) })),
+      if (andApply) void applyLibrary(lib, ctx.workshopOn).then(
+        (r) => ctx.flash(t('ws.libApplied', { name: lib.name, count: r.added })),
         fail,
       );
     } catch (e) {
@@ -784,9 +899,9 @@ function ImportSheet({ ctx, initial, onClose, onSaved, fail }: {
     <div className="scrim scrim-center" onClick={onClose}>
       <div className="picker ws-sheet ws-import" onClick={(e) => e.stopPropagation()}>
         <button className="detail-close" onClick={onClose} aria-label={t('common.close')}><Icon name="x" size={16} /></button>
-        <span className="eyebrow">{t('ws.eyebrow')}</span>
+        <span className="eyebrow">{t('game.eyebrowLibraries')}</span>
         <h2>{t('ws.importTitle')}</h2>
-        <p className="hint ws-import-lede">{t('ws.importLede')}</p>
+        <p className="hint ws-import-lede">{t('mods.importLede')}</p>
         <form className="invite-field" onSubmit={(e) => { e.preventDefault(); void look(text); }}>
           <Icon name="link" size={16} />
           <input
@@ -806,22 +921,23 @@ function ImportSheet({ ctx, initial, onClose, onSaved, fail }: {
         {got && (
           <div className="ws-import-got">
             <div className="ws-import-head">
-              <div className="ws-import-game"><GameHero ctx={ctx} appid={got.appid} /></div>
+              <div className="ws-import-game"><GameHero ctx={ctx} gameKey={got.key} appid={got.appid} /></div>
               <div>
                 <small>{game}</small>
                 <input className="ws-name ws-name-sm" value={name} onChange={(e) => setName(e.target.value)} aria-label={t('ws.libName')} maxLength={80} spellCheck={false} />
                 <span>
                   {t('ws.libItems', { count: got.ids.length })}
-                  {owned && have.length > 0 && ` · ${t('ws.alreadySub', { count: have.length })}`}
+                  {owned && have.length > 0 && ` · ${t('mods.alreadyHave', { count: have.length })}`}
                   {owned && toGet > 0 && ` · ${t('ws.toDownload', { size: bytes(toGet) })}`}
+                  <SourceDots refs={got.ids} />
                 </span>
               </div>
             </div>
             <div className="ws-import-grid">
               {got.items.slice(0, 11).map((it) => (
-                <div key={it.id} className={`ws-import-it ${isSubscribed(got.appid, it.id) ? 'have' : ''}`} title={it.title}>
+                <div key={it.ref} className={`ws-import-it ${refHave(it.ref, got.appid) ? 'have' : ''}`} title={it.title}>
                   <Preview item={it} />
-                  {isSubscribed(got.appid, it.id) && <i><Icon name="check" size={11} /></i>}
+                  {refHave(it.ref, got.appid) && <i><Icon name="check" size={11} /></i>}
                 </div>
               ))}
               {got.items.length > 11 && <div className="ws-import-more">{t('ws.moreItems', { count: got.items.length - 11 })}</div>}
@@ -830,18 +946,18 @@ function ImportSheet({ ctx, initial, onClose, onSaved, fail }: {
             {!owned && (
               <div className="trust trust-warn">
                 <Icon name="restore" size={16} />
-                <span>{ctx.scan ? t('ws.notOwned', { game }) : t('join.stillScanning')}</span>
+                <span>{ctx.scan ? t('mods.notOnPc', { game }) : t('join.stillScanning')}</span>
               </div>
             )}
             {owned && got.ids.length === 0 && <p className="ws-note warn">{t('ws.importEmpty')}</p>}
             <div className="host-actions">
               <button className="act act-ghost" onClick={onClose}>{t('common.cancel')}</button>
               <button className="act act-ghost" disabled={!owned || saving || !got.ids.length} onClick={() => void save(false)}>{t('ws.save')}</button>
-              <button className="act act-get" disabled={!owned || saving || !got.ids.length} onClick={() => void save(true)}>
+              <button className="act act-get" disabled={!canApply || saving || !got.ids.length} onClick={() => void save(true)}>
                 <Icon name="download" size={14} /> {t('ws.saveApply')}
               </button>
             </div>
-            <p className="ws-note">{t('ws.importSafe')}</p>
+            <p className="ws-note">{t('mods.importSafe')}</p>
           </div>
         )}
       </div>
@@ -849,9 +965,9 @@ function ImportSheet({ ctx, initial, onClose, onSaved, fail }: {
   );
 }
 
-// ---------- Item sheet ----------
+// ---------- Workshop item sheet ----------
 
-function ItemSheet({ item, onClose }: { item: WorkshopItem; onClose: () => void }) {
+export function ItemSheet({ item, onClose }: { item: WorkshopItem; onClose: () => void }) {
   const page = usePage();
   useWorkshop();
   const [menu, setMenu] = useState(false);
@@ -879,12 +995,12 @@ function ItemSheet({ item, onClose }: { item: WorkshopItem; onClose: () => void 
             <a onClick={() => void openUrl(item.url || steamUrl(item.id))}>{t('ws.viewOnSteam')} <Icon name="ext" size={11} /></a>
           </div>
           <div className="detail-cta">
-            <SubButton appid={page.appid} item={item} big />
+            {page.ctx.workshopOn && page.appid ? <SubButton appid={page.appid} item={item} big /> : <span className="act act-soon act-big" title={t('mods.wsWindowsTitle')}>{t('mods.wsWindows')}</span>}
             <div className="ws-add">
               <button className={`act act-ghost act-big ws-addbig ${menu ? 'on' : ''}`} onClick={() => setMenu(!menu)}>
                 <Icon name="stack" size={15} /> {t('ws.addToLib')}
               </button>
-              {menu && <AddMenu appid={page.appid} ids={[item.id, ...missingReq.filter((id) => !!cachedItem(id))]} onClose={() => setMenu(false)} />}
+              {menu && <AddMenu refs={[item.id, ...missingReq.filter((id) => !!req[requires.indexOf(id)])]} onClose={() => setMenu(false)} />}
             </div>
           </div>
 
@@ -907,7 +1023,7 @@ function ItemSheet({ item, onClose }: { item: WorkshopItem; onClose: () => void 
                   );
                 })}
               </div>
-              {missingReq.length > 0 && (
+              {missingReq.length > 0 && page.ctx.workshopOn && (
                 <button className="act act-ghost ws-req-all" onClick={() => void subscribe(page.appid, missingReq).catch(page.fail)}>
                   <Icon name="plus" size={14} /> {t('ws.subscribeAllReq', { count: missingReq.length })}
                 </button>
@@ -939,195 +1055,7 @@ function ItemSheet({ item, onClose }: { item: WorkshopItem; onClose: () => void 
   );
 }
 
-// ---------- The game page ----------
+/** The game key of a Steam app id (the scan's canonical id first): Workshop links and `ctx.workshop` go through it. */
+export const steamGameKey = (ctx: Ctx, appid: string) =>
+  gameKeyOfAppid(appid, ctx.scan?.games.find((g) => g.store === 'steam' && g.storeId === appid)?.canon ?? GAMES.find((g) => g.steam?.includes(appid))?.id);
 
-function GamePage({ ctx, appid, game, openLib, tab, setTab, banner, setBanner, fail, onImport, onHub }: {
-  ctx: Ctx; appid: string; game: string; openLib?: string;
-  tab: Tab; setTab: (t: Tab) => void;
-  banner: unknown; setBanner: (e: unknown) => void;
-  fail: (e: unknown) => void; onImport: () => void; onHub: () => void;
-}) {
-  const owned = !!steamGame(ctx, appid);
-  const all = useLibraries();
-  const libs = useMemo(() => (all ?? []).filter((l) => l.appid === appid), [all, appid]);
-  const [item, setItem] = useState<WorkshopItem | null>(null);
-  const [editing, setEditing] = useState<Library | null>(() => libs.find((l) => l.id === openLib) ?? null);
-  const subCount = useWorkshop(() => subscribedIds(appid)?.length);
-  const latest = useLatest({ ctx, libs });
-
-  useEffect(() => {
-    if (owned) readState(appid, null).then(() => setBanner(null), setBanner);
-  }, [appid, owned]);
-
-  const addTo = useCallback((lib: Library | null, ids: string[]) => {
-    const { flash } = latest.current.ctx;
-    if (lib) {
-      void saveLibrary({ ...lib, items: [...new Set([...lib.items, ...ids])], applied: lib.applied && ids.every((id) => isSubscribed(appid, id)) })
-        .then(() => flash(t('ws.added', { name: lib.name })), fail);
-    } else {
-      const n = latest.current.libs.length + 1;
-      const made = newLibrary(appid, n > 1 ? t('ws.newLibNameN', { n }) : t('ws.newLibName'), ids);
-      void saveLibrary(made).then(() => {
-        flash(t('ws.added', { name: made.name }));
-        setEditing(made);
-      }, fail);
-    }
-  }, [appid, fail]);
-  const page = useMemo<Page>(() => ({ ctx, appid, game, openItem: setItem, fail, addTo }), [ctx, appid, game, fail, addTo]);
-
-  if (!owned && ctx.scan) {
-    return (
-      <div className="page">
-        <button className="ws-back" onClick={onHub}><Icon name="back" size={14} /> {t('ws.allGames')}</button>
-        <div className="empty">{t('ws.notOwned', { game })}</div>
-      </div>
-    );
-  }
-
-  return (
-    <PageCtx.Provider value={page}>
-      <div className="page ws-page">
-        <section className="ws-hero">
-          <div className="ws-hero-art" aria-hidden><GameHero ctx={ctx} appid={appid} /></div>
-          <div className="ws-hero-copy">
-            <button className="ws-back" onClick={onHub}><Icon name="back" size={14} /> {t('ws.allGames')}</button>
-            <span className="eyebrow">{t('ws.eyebrow')}</span>
-            <h1>{game}</h1>
-            <p className="ws-stats">
-              {subCount !== undefined && <span><b>{subCount}</b> {t('ws.statSubscribed', { count: subCount })}</span>}
-              <span><b>{libs.length}</b> {t('ws.statLibraries', { count: libs.length })}</span>
-            </p>
-          </div>
-          <div className="ws-hero-actions">
-            <button className="act act-ghost" onClick={onImport}><Icon name="link" size={14} /> {t('ws.importAction')}</button>
-            <button className="act act-ghost" onClick={() => void launchGame(`steam://url/SteamWorkshopPage/${appid}`)}>{t('ws.openSteam')} <Icon name="ext" size={12} /></button>
-          </div>
-        </section>
-
-        <nav className="ws-tabs" role="tablist">
-          {TABS.map(({ id, label }) => (
-            <button key={id} role="tab" aria-selected={tab === id} className={tab === id ? 'on' : ''} onClick={() => setTab(id)}>
-              {t(label)}
-              {id === 'subscribed' && subCount !== undefined && <em>{subCount}</em>}
-              {id === 'libraries' && libs.length > 0 && <em>{libs.length}</em>}
-            </button>
-          ))}
-        </nav>
-
-        {banner !== null && <SteamBanner error={banner} game={game} onRetry={() => readState(appid, null).then(() => setBanner(null), setBanner)} />}
-
-        <div className="ws-panel" key={tab}>
-          {tab === 'browse' && <Browse onImport={onImport} onTab={setTab} />}
-          {tab === 'subscribed' && <Subscribed />}
-          {tab === 'libraries' && <Libraries onEdit={setEditing} onImport={onImport} onNew={() => addTo(null, [])} />}
-        </div>
-      </div>
-
-      {item && <ItemSheet item={item} onClose={() => setItem(null)} />}
-      {editing && <LibrarySheet lib={editing} onClose={() => setEditing(null)} />}
-    </PageCtx.Provider>
-  );
-}
-
-// ---------- The hub: every library, every Steam game ----------
-
-function Hub({ ctx, fail, onImport }: { ctx: Ctx; fail: (e: unknown) => void; onImport: (text: string) => void }) {
-  const libs = useLibraries();
-  const steam = (ctx.scan?.games ?? []).filter((g) => g.store === 'steam');
-  const [text, setText] = useState('');
-  useItems((libs ?? []).flatMap((l) => l.items.slice(0, 4)));
-  // Libraries sorted by game, then most recently changed.
-  const sorted = useMemo(() => [...(libs ?? [])].sort((a, b) => a.appid.localeCompare(b.appid) || b.updated - a.updated), [libs]);
-  // A library opens on its game's page, where its items can be opened and added to.
-  const open = (l: Library) => (steamGame(ctx, l.appid) ? ctx.workshop(l.appid, undefined, l.id) : ctx.flash(t('ws.notOwned', { game: gameTitle(ctx, l.appid) })));
-
-  return (
-    <div className="page">
-      <section className="together-hero">
-        <span className="eyebrow">{t('ws.eyebrow')}</span>
-        <h1>{t('ws.hubTitle1')}<br /><span className="chrome">{t('ws.hubTitle2')}</span></h1>
-        <p>{t('ws.hubLede')}</p>
-        <form className="invite-field" onSubmit={(e) => { e.preventDefault(); if (text.trim()) onImport(text); }}>
-          <Icon name="link" size={16} />
-          <input value={text} onChange={(e) => setText(e.target.value)} placeholder={t('ws.pastePlaceholder')} spellCheck={false} />
-          <button className="act act-get" disabled={!parsePasted(text)}>{t('ws.importAction')}</button>
-        </form>
-      </section>
-
-      <Section title={t('ws.libsAll')} sub={t('ws.libsAllSub')}>
-        {libs === null ? (
-          <div className="empty">{t('ws.loadingLibs')}</div>
-        ) : sorted.length === 0 ? (
-          <div className="empty">{t('ws.libsNone')}</div>
-        ) : (
-          <div className="queue">
-            {sorted.map((l, i) => <LibraryRow key={l.id} ctx={ctx} lib={l} i={i} withGame fail={fail} onOpen={() => open(l)} />)}
-          </div>
-        )}
-      </Section>
-
-      <Section title={t('ws.games')} sub={t('ws.gamesSub')}>
-        {!ctx.scan ? <div className="empty">{t('lib.scanning')}</div> : steam.length === 0 ? <div className="empty">{t('ws.noSteam')}</div> : (
-          <div className="ws-games">
-            {steam.map((g, i) => {
-              const n = (libs ?? []).filter((l) => l.appid === g.storeId).length;
-              return (
-                <button key={g.key} className="ws-game" style={{ ['--i' as string]: i }} onClick={() => ctx.workshop(g.storeId)}>
-                  <GameArt id={g.canon} name={g.name} src={g.artWide} wide={g.artWide} local={g.wideLocal} wideLocal={g.wideLocal} />
-                  <span>
-                    <b>{g.name}</b>
-                    <small>{n ? t('ws.statLibrariesN', { count: n }) : t('ws.browseShort')}</small>
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        )}
-      </Section>
-    </div>
-  );
-}
-
-/**
- * The Workshop view: a game's page when `nav.appid` is set, else the hub. `nav.link`: a library link to import (asked
- * first), shown over the game's libraries; `nav.lib`: a library to open. App remounts the view per game.
- */
-export function Workshop({ ctx, nav }: { ctx: Ctx; nav: WorkshopNav }): ReactNode {
-  const { appid } = nav;
-  const [tab, setTab] = useState<Tab>(nav.lib ? 'libraries' : 'browse');
-  const [banner, setBanner] = useState<unknown>(null);
-  const [importing, setImporting] = useState<{ text?: string; n?: number } | null>(null);
-  // Each link that arrives (with the view, or while it is open) opens the import sheet once.
-  const [seen, setSeen] = useState<number>();
-  if (nav.link && nav.link.n !== seen) {
-    setSeen(nav.link.n);
-    setImporting({ text: nav.link.text, n: nav.link.n });
-    setTab('libraries');
-  }
-  const game = appid ? gameTitle(ctx, appid) : '';
-  const latest = useLatest(ctx);
-  /** Steam refusals (not running...) show as a banner on a game page; others as a toast. */
-  const fail = useCallback((e: unknown) => (appid && isCode(e, STEAM_BLOCKING) ? setBanner(e) : latest.current.flash(errorText(e, game))), [appid, game]);
-  const openImport = useCallback((text?: string) => setImporting({ text }), []);
-  const openBlank = useCallback(() => setImporting({}), []);
-  const onSaved = (lib: Library) => {
-    setImporting(null);
-    if (lib.appid === appid) setTab('libraries');
-    else ctx.workshop(lib.appid);
-  };
-
-  return (
-    <>
-      {appid ? (
-        <GamePage
-          key={appid} ctx={ctx} appid={appid} game={game} openLib={nav.lib}
-          tab={tab} setTab={setTab} banner={banner} setBanner={setBanner}
-          fail={fail} onImport={openBlank} onHub={() => ctx.workshop(null)}
-        />
-      ) : (
-        <Hub ctx={ctx} fail={fail} onImport={openImport} />
-      )}
-      {importing && <ImportSheet key={importing.n ?? 'typed'} ctx={ctx} initial={importing.text} onClose={() => setImporting(null)} onSaved={onSaved} fail={fail} />}
-    </>
-  );
-}

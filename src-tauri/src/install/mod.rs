@@ -3,6 +3,7 @@
 //! `%LOCALAPPDATA%\SIGF` on Windows, `~/Library/Application Support/SIGF` on macOS): `cache/`, `profiles/`,
 //! `snapshots/`, `installed.json`.
 
+pub mod archive;
 pub mod build;
 pub mod byo;
 pub mod check;
@@ -17,9 +18,11 @@ pub mod tools;
 
 pub use mrpack::Prism;
 pub use recipe::{Recipe, Strategy};
-pub use registry::{InstalledGame, InstalledMod, LaunchExe, Me3Launch, RequiredAt};
+pub use registry::{InstalledGame, InstalledMod, LaunchExe, Me3Launch, ModFileRecord, RequiredAt};
 
 use paths::{ensure_real_parent_inside, path_string, resolve_inside, Root};
+// Toolchain and build inputs (tools.rs, build.rs) stay zip-only.
+use archive::extract_zip;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -154,6 +157,9 @@ pub struct Engine {
     pub own: HashMap<String, byo::OwnSource>,
     /// Dev mode only (`allow_local`): toolchain ids -> a local folder used instead of the pinned download (tests).
     pub tool_dirs: HashMap<String, PathBuf>,
+    /// A mod plan's install (`crate::mods`): its downloads follow that source's hosts (`check::MOD_HOSTS`, files up to
+    /// `check::MOD_MAX_FILE_BYTES`) instead of the recipe rule. None (the default) for every recipe.
+    pub mod_hosts: Option<&'static [&'static str]>,
 }
 
 /// Share of the bar given to fetching; the rest is install.
@@ -214,7 +220,7 @@ struct StepPlan<'a> {
 
 impl Engine {
     pub fn new(home: impl Into<PathBuf>, prism: Option<Prism>) -> Self {
-        Self { home: home.into(), prism, docs: docs_dir(), allow_local: check::dev_local_recipes(), own: HashMap::new(), tool_dirs: HashMap::new() }
+        Self { home: home.into(), prism, docs: docs_dir(), allow_local: check::dev_local_recipes(), own: HashMap::new(), tool_dirs: HashMap::new(), mod_hosts: None }
     }
 
     pub fn from_env(prism: Option<Prism>) -> Self {
@@ -539,12 +545,16 @@ impl Engine {
         self.check_byo(recipe)?;
 
         // Every download must be allowed (check::UrlPolicy) and within the size cap before the first one starts.
-        let policy = check::UrlPolicy::for_recipe(recipe, self.allow_local);
+        let policy = match self.mod_hosts {
+            Some(hosts) => check::UrlPolicy::for_mod(hosts, self.allow_local),
+            None => check::UrlPolicy::for_recipe(recipe, self.allow_local),
+        };
+        let max_file = if self.mod_hosts.is_some() { check::MOD_MAX_FILE_BYTES } else { check::MAX_FILE_BYTES };
         let jobs = check::planned_downloads(recipe);
         for (url, _, size) in &jobs {
             policy.check(url, false)?;
-            if size.is_some_and(|s| s > check::MAX_FILE_BYTES) {
-                return Err(InstallError::recipe(format!("{url} is larger than {} bytes", check::MAX_FILE_BYTES)));
+            if size.is_some_and(|s| s > max_file) {
+                return Err(InstallError::recipe(format!("{url} is larger than {max_file} bytes")));
             }
         }
         for (url, _, size, script) in check::planned_build_downloads(recipe) {
@@ -561,7 +571,10 @@ impl Engine {
         for (i, (url, sha, size)) in jobs.iter().enumerate() {
             let base = i as f64 / n * FETCH_PCT;
             rep.emit(Phase::Download, base);
-            let opts = fetch::FetchOpts::new(self.allow_local, *size);
+            let opts = match self.mod_hosts {
+                Some(hosts) => fetch::FetchOpts::for_mod(self.allow_local, *size, hosts),
+                None => fetch::FetchOpts::new(self.allow_local, *size),
+            };
             let got = fetch::fetch(&self.cache_dir(), url, sha, &opts, &mut |done, total| {
                 if let Some(t) = total.filter(|t| *t > 0) {
                     rep.emit(Phase::Download, base + done as f64 / t as f64 / n * FETCH_PCT * 0.95);
@@ -647,6 +660,7 @@ impl Engine {
             placed,
             conflicts: recipe.conflicts.clone(),
             requires_files: required,
+            files: vec![],
         };
         let mut all = self.installed();
         all.retain(|m| m.id != recipe.id);
@@ -711,11 +725,11 @@ impl Engine {
                 if f.unpack {
                     let target = if p.rest.is_empty() { app.clone() } else { resolve_inside(&app, "", &p.rest)?.0 };
                     if f.root.is_none() {
-                        let got = extract_zip(&src, &target)?;
+                        let got = archive::extract(&src, &target)?;
                         verify_contents(f, &got)?;
                     } else {
                         // The whole zip is extracted and verified aside, then only its root folder is copied in.
-                        let got = extract_zip(&src, &staging.join(i.to_string()))?;
+                        let got = archive::extract(&src, &staging.join(i.to_string()))?;
                         verify_contents(f, &got)?;
                         for (rel, x) in placed(f, &got)? {
                             let (abs, _) = resolve_inside(&target, "", &rel)?;
@@ -735,7 +749,7 @@ impl Engine {
                     std::fs::copy(&src, &abs).map_err(|e| InstallError::io(&abs, e))?;
                 }
             } else if f.unpack {
-                let got = extract_zip(&src, &staging.join(i.to_string()))?;
+                let got = archive::extract(&src, &staging.join(i.to_string()))?;
                 verify_contents(f, &got)?;
                 for (rel, x) in placed(f, &got)? {
                     outside.push(snapshot::Planned {
@@ -998,7 +1012,8 @@ impl Engine {
     }
 }
 
-/// One file extracted from a zip: its path in the archive (forward slashes), where it landed, its sha256.
+/// One file extracted from an archive (zip or 7z, `archive::extract`): its path in the archive (forward slashes), where it landed, its sha256.
+#[derive(Debug)]
 struct Extracted {
     rel: String,
     abs: PathBuf,
@@ -1024,37 +1039,6 @@ fn remove_placed(placed: &[String]) {
     for p in placed {
         let _ = std::fs::remove_file(p);
     }
-}
-
-/// Extracts a zip under `target`; entries whose names escape it (zip slip) abort the install.
-fn extract_zip(zip_path: &Path, target: &Path) -> Result<Vec<Extracted>, InstallError> {
-    let f = std::fs::File::open(zip_path).map_err(|e| InstallError::io(zip_path, e))?;
-    let mut z = zip::ZipArchive::new(f).map_err(|e| InstallError::io(zip_path, e))?;
-    std::fs::create_dir_all(target).map_err(|e| InstallError::io(target, e))?;
-    let mut out = vec![];
-    let mut budget = MAX_UNPACKED_BYTES;
-    for i in 0..z.len() {
-        let mut entry = z.by_index(i).map_err(|e| InstallError::io(zip_path, e))?;
-        let name = entry.name().to_string();
-        let Some(rel) = entry.enclosed_name() else {
-            return Err(InstallError::PathTraversal { dst: name });
-        };
-        let rel = paths::rel_string(&rel);
-        let (abs, _) = resolve_inside(target, "", &rel)?;
-        if entry.is_dir() {
-            std::fs::create_dir_all(&abs).map_err(|e| InstallError::io(&abs, e))?;
-            continue;
-        }
-        if let Some(p) = abs.parent() {
-            std::fs::create_dir_all(p).map_err(|e| InstallError::io(p, e))?;
-        }
-        ensure_real_parent_inside(target, &abs, &name)?;
-        let mut file = std::fs::File::create(&abs).map_err(|e| InstallError::io(&abs, e))?;
-        copy_capped(&mut entry, &mut file, &mut budget, &abs)?;
-        drop(file);
-        out.push(Extracted { sha256: fetch::sha256_file(&abs)?, rel, abs });
-    }
-    Ok(out)
 }
 
 /// An unpacked archive must hold exactly the `contents` the recipe lists (when it lists them), byte for byte.

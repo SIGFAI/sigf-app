@@ -60,7 +60,7 @@ const stored = <T,>(key: string): T | null => {
 };
 
 const SUBS = 'ws-sim-subs';
-const LIBS = 'ws-sim-libs';
+const LIBS = 'ws-sim-libs-2';
 const DAY = 86_400_000;
 
 function startLibs(): Library[] {
@@ -68,6 +68,8 @@ function startLibs(): Library[] {
   return [
     { id: 'k3v9pq2mxa', appid: '4000', name: 'Builder essentials', items: ['160250458', '104604943', '109643223', '104482086', '104607712', '279079869'], applied: true, addedByUs: ['104482086', '104607712', '279079869'], created: now - 9 * DAY, updated: now - 2 * DAY },
     { id: 'r7hw4ne8tc', appid: '4000', name: 'Friday prop hunt', items: ['135509255', '143190159', '187073946', '105982362'], applied: false, addedByUs: [], source: { kind: 'link' }, created: now - 3 * DAY, updated: now - 3 * DAY },
+    { id: 'm4xq8vtc2p', appid: '1966720', game: 'lethal', name: 'Friday crew', items: ['ts:BepInEx-BepInExPack', 'ts:notnotnotswipez-MoreCompany', 'ts:x753-More_Suits', 'ts:FlipMods-ReservedItemSlotCore', 'nx:lethalcompany:11', 'nx:lethalcompany:21', 'gb:Mod:478835'], applied: false, addedByUs: [], created: now - 2 * DAY, updated: now - 2 * DAY },
+    { id: 'p9ke3wz7rb', appid: '', game: 'balatro', name: 'Deck skins', items: ['gb:Mod:601535', 'gb:Mod:589198', 'nx:balatro:45'], applied: false, addedByUs: [], source: { kind: 'link' }, created: now - 5 * DAY, updated: now - 5 * DAY },
     { id: 'z2fb6yu9jd', appid: '4000', name: 'Car meet', items: ['104487316', '104483020', '104492363', '771487490', '112606459'], applied: false, addedByUs: [], source: { kind: 'collection', id: '2861574034' }, created: now - DAY, updated: now - DAY },
   ];
 }

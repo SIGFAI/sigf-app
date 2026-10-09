@@ -2,9 +2,12 @@ pub mod hosted;
 pub mod install;
 pub mod join;
 pub mod launch;
+pub mod mcprofile;
+pub mod mods;
 pub mod privacy;
 pub mod report;
 pub mod scan;
+pub mod web;
 pub mod update;
 pub mod workshop;
 
@@ -28,8 +31,8 @@ pub(crate) fn install_running() -> bool {
 /// hosted.json is read and rewritten whole: one writer at a time.
 static HOSTED_LOCK: Mutex<()> = Mutex::new(());
 
-/// Links received (deep link, second instance) and not yet read by the UI: invite lobby ids, and library share links
-/// in their `sigf://library/...` form. The UI drains it on start and on every `link://open` event, so a link that
+/// Links received (deep link, second instance) and not yet read by the UI: invite lobby ids, library share links
+/// in their `sigf://library/...` form, and Nexus `nxm://` links in their normalized form (`mods::NxmLink::to_link`). The UI drains it on start and on every `link://open` event, so a link that
 /// arrives before the webview listens is never lost.
 static PENDING_LINKS: Mutex<Vec<String>> = Mutex::new(Vec::new());
 
@@ -290,8 +293,8 @@ struct ApiAnswer {
     body: String,
 }
 
-/// Calls the sigf.ai app API: `/api/app/lobbies*` (GET, POST or DELETE, an optional JSON body and host secret) and
-/// the Workshop proxy `/api/app/workshop/*` (GET only). Nothing else.
+/// Calls the sigf.ai app API: `/api/app/lobbies*` (GET, POST or DELETE, an optional JSON body and host secret), the
+/// Workshop proxy `/api/app/workshop/*` and the mods proxy `/api/app/mods/*` (GET only). Nothing else.
 #[tauri::command]
 async fn lobby_api(method: String, path: String, body: Option<String>, secret: Option<String>) -> Result<ApiAnswer, String> {
     if !lobby_path_ok(&method, &path) {
@@ -331,6 +334,9 @@ fn lobby_path_ok(method: &str, path: &str) -> bool {
     if let Some(rest) = path.strip_prefix("/api/app/workshop/") {
         return method == "GET" && workshop_path_ok(rest);
     }
+    if let Some(rest) = path.strip_prefix("/api/app/mods/") {
+        return method == "GET" && mods_path_ok(rest);
+    }
     const BASE: &str = "/api/app/lobbies";
     let Some(rest) = path.strip_prefix(BASE) else { return false };
     if rest.is_empty() || rest == "/hosting" {
@@ -355,6 +361,15 @@ fn workshop_path_ok(rest: &str) -> bool {
     ["browse", "items"].contains(&route)
         && query.len() <= 2500
         && query.bytes().all(|b| b.is_ascii_alphanumeric() || b"=&%,*+/._-".contains(&b))
+}
+
+/// The part after `/api/app/mods/` (docs/GAME-HUB.md section 3): `games`, `search`, `item`, `plan` or `mc-versions`, with an optional
+/// query in the workshop characters plus `:` (refs like `nx:skyrimspecialedition:12604`).
+fn mods_path_ok(rest: &str) -> bool {
+    let (route, query) = rest.split_once('?').unwrap_or((rest, ""));
+    ["games", "search", "item", "plan", "mc-versions"].contains(&route)
+        && query.len() <= 2500
+        && query.bytes().all(|b| b.is_ascii_alphanumeric() || b"=&%,*+/._:-".contains(&b))
 }
 
 /// This PC's LAN address (the route to the internet's interface), for a host's default join address. No packet is
@@ -417,14 +432,22 @@ async fn bug_report(app: tauri::AppHandle, input: report::ReportInput) -> Result
     tauri::async_runtime::spawn_blocking(move || report::make(&input, &version)).await.map_err(|e| e.to_string())
 }
 
-/// Links received since the last call, already checked: lobby ids, and library links (`sigf://library/...`).
+/// Links received since the last call, already checked: lobby ids, library links (`sigf://library/...`) and nxm links
+/// (`nxm://<domain>/mods/<mod>/files/<file>?key=&expires=[&user_id=]`).
 #[tauri::command]
 fn take_links() -> Vec<String> {
     std::mem::take(&mut *PENDING_LINKS.lock().unwrap_or_else(|p| p.into_inner()))
 }
 
 fn receive_links(app: &tauri::AppHandle, urls: impl IntoIterator<Item = String>) {
-    let links: Vec<String> = urls.into_iter().filter_map(|u| join::parse_link(&u).or_else(|| workshop::parse_library_link(&u).map(|l| l.to_link()))).collect();
+    let links: Vec<String> = urls
+        .into_iter()
+        .filter_map(|u| {
+            join::parse_link(&u)
+                .or_else(|| workshop::parse_library_link(&u).map(|l| l.to_link()))
+                .or_else(|| mods::parse_nxm(&u).map(|l| l.to_link()))
+        })
+        .collect();
     if links.is_empty() {
         return;
     }
@@ -709,7 +732,11 @@ pub fn run() {
     tauri::Builder::default()
         // First: a second launch (a sigf:// click while the app runs) hands its arguments here and exits. With the
         // deep-link feature its link reaches on_open_url below; this callback only brings the window forward.
-        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+        .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
+            // nxm:// is registered at run time (mods::nxm_handler), so the deep-link plugin does not pass it on.
+            if let Some(link) = mods::nxm_arg(&argv) {
+                receive_links(app, [link]);
+            }
             if let Some(w) = app.get_webview_window("main") {
                 let _ = w.unminimize();
                 let _ = w.set_focus();
@@ -734,14 +761,19 @@ pub fn run() {
             if let Ok(Some(urls)) = app.deep_link().get_current() {
                 receive_links(app.handle(), urls.into_iter().map(|u| u.to_string()));
             }
+            if let Some(link) = mods::nxm_arg(&std::env::args().collect::<Vec<_>>()) {
+                receive_links(app.handle(), [link]);
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            scan_games, steam_lookup, launch, install, own_copies_find, own_copy_pick, restore, installed, fetch_text, play, join_lobby, lobby_api, lan_address,
+            scan_games, steam_lookup, launch, web::web_open, web::web_frame, web::web_fullscreen, web::web_close, install, own_copies_find, own_copy_pick, restore, installed, fetch_text, play, join_lobby, lobby_api, lan_address,
             take_links, minecraft_players, hosted_list, hosted_save, hosted_forget, privacy_get, privacy_set, app_platform, bug_report,
             update::update_check, update::update_blocked, update::update_install,
             workshop::workshop_subscribe, workshop::workshop_unsubscribe, workshop::workshop_state, workshop::libraries_list, workshop::libraries_save,
-            workshop::libraries_delete
+            workshop::libraries_delete, mods::mods_install, mods::nxm_handler, mods::nxm_handler_state, mods::nexus_status, mods::nexus_login,
+            mods::nexus_logout, mods::nexus_validate, mods::nexus_set_key, mods::nexus_download_links,
+            mcprofile::mc_profile_state, mcprofile::mc_profile_play
         ])
         .run(tauri::generate_context!())
         .expect("error while running the SIGF app");
@@ -826,6 +858,35 @@ mod tests {
             assert!(!lobby_path_ok("GET", bad), "{bad}");
         }
         assert!(!lobby_path_ok("GET", &format!("/api/app/workshop/items?ids={}", "1".repeat(2501))));
+    }
+
+    #[test]
+    fn mods_paths() {
+        for ok in [
+            "/api/app/mods/games",
+            "/api/app/mods/mc-versions",
+            "/api/app/mods/search?game=lethalcompany&source=ts&q=more+company&sort=popular&cursor=abc%3D",
+            "/api/app/mods/item?ref=nx:skyrimspecialedition:12604",
+            "/api/app/mods/plan?ref=ts:BepInEx-BepInExPack&game=lethalcompany&file=123",
+        ] {
+            assert!(lobby_path_ok("GET", ok), "{ok}");
+            assert!(!lobby_path_ok("POST", ok), "POST {ok}");
+        }
+        for bad in [
+            "/api/app/mods",
+            "/api/app/mods/",
+            "/api/app/mods/other",
+            "/api/app/mods/plan/",
+            "/api/app/mods/plan/../../admin",
+            "/api/app/mods/%2e%2e/admin",
+            "/api/app/mods/item?ref=a b",
+            "/api/app/mods/item?ref=a#x",
+            "/api/app/mods/item?ref=a?b",
+            "/api/app/mods/item?ref=<x>",
+            "/api/app/modsx/games",
+        ] {
+            assert!(!lobby_path_ok("GET", bad), "{bad}");
+        }
     }
 
     #[test]

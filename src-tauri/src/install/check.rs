@@ -40,6 +40,54 @@ pub const BUILD_DOWNLOAD_HOSTS: &[&str] = &["raw.githubusercontent.com", "www.py
 /// Player builds only: GitHub source archives redirect to `codeload.github.com`.
 pub const BUILD_REDIRECT_HOSTS: &[&str] = &["codeload.github.com"];
 
+/// Mod plans only (`crate::mods`, docs/GAME-HUB.md section 5): where each source's files may be downloaded from,
+/// start and redirects alike. `*.` stands for any subdomain (not the bare domain). Recipes never use these lists:
+/// their rule stays `UrlPolicy::for_recipe`.
+pub const MOD_HOSTS: &[(&str, &[&str])] = &[
+    ("ts", &["thunderstore.io", "gcdn.thunderstore.io", "ccdn.thunderstore.io"]),
+    ("cf", &["edge.forgecdn.net", "mediafilez.forgecdn.net"]),
+    ("nx", &["*.nexus-cdn.com"]),
+    // `binary_url` is on api.mod.io or a game's `g-<id>.modapi.io`, served from the CDN.
+    ("mio", &["api.mod.io", "*.modapi.io", "*.modcdn.io"]),
+    // Downloads redirect to the `filecacheNN` mirrors.
+    ("gb", &["files.gamebanana.com", "*.gamebanana.com"]),
+    ("mr", &["cdn.modrinth.com"]),
+];
+/// Largest single file of a mod plan (docs/GAME-HUB.md section 5).
+pub const MOD_MAX_FILE_BYTES: u64 = 4 * 1024 * 1024 * 1024;
+
+/// The download hosts of a mod source (`ts`, `cf`, ...), None for a source the engine does not install (`ws`).
+pub fn mod_hosts(source: &str) -> Option<&'static [&'static str]> {
+    MOD_HOSTS.iter().find(|(s, _)| *s == source).map(|(_, h)| *h)
+}
+
+/// `host` is one of `hosts` (exactly, or under a `*.` entry's domain).
+pub fn host_listed(hosts: &[&str], host: &str) -> bool {
+    let host = host.to_ascii_lowercase();
+    hosts.iter().any(|h| match h.strip_prefix("*.") {
+        Some(domain) => host.strip_suffix(domain).is_some_and(|sub| sub.len() > 1 && sub.ends_with('.') && !sub.starts_with('.')),
+        None => host == *h,
+    })
+}
+
+/// A mod plan download: `canonical_https` on everything before the query, a host of `hosts`, and an optional plain
+/// query (`[A-Za-z0-9._~=&%+-]`, at most 1024 bytes: CDN tokens like Nexus's `md5=&expires=&user_id=`).
+pub fn mod_url_ok(hosts: &[&str], url: &str) -> bool {
+    let (base, query) = match url.split_once('?') {
+        Some((b, q)) => (b, Some(q)),
+        None => (url, None),
+    };
+    if query.is_some_and(|q| q.is_empty() || q.len() > 1024 || !q.bytes().all(|b| b.is_ascii_alphanumeric() || b"._~=&%+-".contains(&b))) {
+        return false;
+    }
+    canonical_https(base).is_some_and(|u| u.host_str().is_some_and(|h| host_listed(hosts, h)))
+}
+
+/// A redirect a mod plan download may follow: https, no port or user, a host of the same source's list.
+pub fn mod_redirect_ok(hosts: &[&str], u: &reqwest::Url) -> bool {
+    u.scheme() == "https" && u.port().is_none() && u.username().is_empty() && u.host_str().is_some_and(|h| host_listed(hosts, h))
+}
+
 /// `SIGF_DEV_LOCAL_RECIPES=1`.
 pub fn dev_local_recipes() -> bool {
     std::env::var(DEV_LOCAL_ENV).is_ok_and(|v| v == "1")
@@ -191,9 +239,16 @@ pub struct UrlPolicy {
     upstream: Option<String>,
     /// Dev mode: `file://` and local paths allowed.
     pub allow_local: bool,
+    /// A mod plan (`UrlPolicy::for_mod`): its source's hosts are the only rule, nothing of a recipe's.
+    mod_hosts: Option<&'static [&'static str]>,
 }
 
 impl UrlPolicy {
+    /// A mod plan's rule (`crate::mods`): https downloads from the source's hosts (`MOD_HOSTS`) only.
+    pub fn for_mod(hosts: &'static [&'static str], allow_local: bool) -> Self {
+        Self { hosted: None, upstream: None, allow_local, mod_hosts: Some(hosts) }
+    }
+
     pub fn for_recipe(r: &Recipe, allow_local: bool) -> Self {
         let repo = hosted_repo(&r.id);
         let upstream = repo.as_deref().and_then(|hosted| {
@@ -206,12 +261,15 @@ impl UrlPolicy {
             Some(h) => repo.as_deref() == Some(h.trim_end_matches('/')),
             None => true,
         };
-        Self { hosted: repo.filter(|_| hosted_ok).map(|h| format!("{h}/releases/download/")), upstream, allow_local }
+        Self { hosted: repo.filter(|_| hosted_ok).map(|h| format!("{h}/releases/download/")), upstream, allow_local, mod_hosts: None }
     }
 
     /// A recipe download (install file, `requires[].source`, mrpack pack): a release asset of the recipe's own SIGFAI
     /// repo (`<tag>/<file>`), or one file of its pinned upstream release.
     pub fn recipe_url_ok(&self, url: &str) -> bool {
+        if let Some(hosts) = self.mod_hosts {
+            return mod_url_ok(hosts, url);
+        }
         if canonical_https(url).is_none() {
             return false;
         }
@@ -254,6 +312,9 @@ impl UrlPolicy {
 
     /// A file listed inside an mrpack (`modrinth.index.json` downloads): Modrinth's CDN, or what `recipe_url_ok` allows.
     pub fn index_url_ok(&self, url: &str) -> bool {
+        if self.mod_hosts.is_some() {
+            return self.recipe_url_ok(url);
+        }
         self.recipe_url_ok(url)
             || (canonical_https(url).is_some() && url.strip_prefix(MODRINTH_CDN).is_some_and(|t| t.split('/').all(seg_ok)))
     }
@@ -273,7 +334,11 @@ impl UrlPolicy {
         } else {
             Err(InstallError::Download {
                 url: location.into(),
-                message: "not an allowed download: only release files of the mod's own SIGFAI repo (or its pinned upstream release)".into(),
+                message: if self.mod_hosts.is_some() {
+                    "not an allowed download: only https files from the mod source's own download hosts".into()
+                } else {
+                    "not an allowed download: only release files of the mod's own SIGFAI repo (or its pinned upstream release)".into()
+                },
             })
         }
     }
@@ -1244,6 +1309,52 @@ mod tests {
         assert!(!redirect_ok(&u("https://objects.githubusercontent.com:444/x")));
         assert!(download_start_ok(&u("https://github.com/SIGFAI/x/releases/download/v1/a")));
         assert!(!download_start_ok(&u("https://raw.githubusercontent.com/SIGFAI/x/main/a")));
+    }
+
+    #[test]
+    fn mod_hosts_per_source() {
+        let ts = mod_hosts("ts").unwrap();
+        let nx = mod_hosts("nx").unwrap();
+        assert!(mod_hosts("ws").is_none() && mod_hosts("xx").is_none());
+        assert!(mod_url_ok(ts, "https://thunderstore.io/package/download/BepInEx/BepInExPack/5.4.2100/"));
+        assert!(mod_url_ok(ts, "https://gcdn.thunderstore.io/live/repository/packages/BepInEx-BepInExPack-5.4.2100.zip"));
+        assert!(mod_url_ok(nx, "https://supporter-files.nexus-cdn.com/1704/2014/SkyUI_5_2_SE-12604-5-2SE.7z?md5=abc_DEF-1&expires=1760000000&user_id=12"));
+        assert!(mod_url_ok(nx, "https://cf-files.nexus-cdn.com/1704/1/a.zip"));
+        assert!(mod_url_ok(mod_hosts("mio").unwrap(), "https://binary.modcdn.io/mods/1/2/a.zip"));
+        assert!(mod_url_ok(mod_hosts("mio").unwrap(), "https://g-1234.modapi.io/v1/games/1234/mods/5/files/6/download"));
+        assert!(mod_url_ok(mod_hosts("mio").unwrap(), "https://api.mod.io/v1/games/1234/mods/5/files/6/download"));
+        assert!(mod_url_ok(mod_hosts("gb").unwrap(), "https://filecache17.gamebanana.com/mods/x.zip"));
+        assert!(mod_url_ok(ts, "https://ccdn.thunderstore.io/live/x.zip"));
+        assert!(mod_url_ok(mod_hosts("cf").unwrap(), "https://edge.forgecdn.net/files/1234/567/my%20mod-1.2.jar"));
+        for bad in [
+            "http://thunderstore.io/package/download/a/b/1/",
+            "https://evil.example/x.zip",
+            "https://thunderstore.io.evil.example/x.zip",
+            "https://evilthunderstore.io/x.zip",
+            "https://thunderstore.io:444/x.zip",
+            "https://user@thunderstore.io/x.zip",
+            "https://thunderstore.io/a/../b.zip",
+            "https://thunderstore.io/a/%2e%2e/b.zip",
+            "https://thunderstore.io/x.zip#frag",
+            "https://thunderstore.io/x.zip?",
+            "https://thunderstore.io/x.zip?a=<b>",
+            "https://cdn.modrinth.com/data/x.jar",
+        ] {
+            assert!(!mod_url_ok(ts, bad), "{bad}");
+        }
+        assert!(!mod_url_ok(nx, "https://nexus-cdn.com/a.zip"), "the bare domain is not a subdomain");
+        assert!(!mod_url_ok(nx, "https://.nexus-cdn.com/a.zip"));
+        assert!(!mod_url_ok(nx, "https://evil.nexus-cdn.com.example/a.zip"));
+        let u = |s: &str| reqwest::Url::parse(s).unwrap();
+        assert!(mod_redirect_ok(ts, &u("https://gcdn.thunderstore.io/live/x.zip?sig=1")));
+        assert!(!mod_redirect_ok(ts, &u("https://objects.githubusercontent.com/x")));
+        // The mod rule replaces the recipe rule, and only for mod plans.
+        let p = UrlPolicy::for_mod(ts, false);
+        assert!(p.check("https://thunderstore.io/package/download/a/b/1.0.0/", false).is_ok());
+        assert!(p.check("https://github.com/SIGFAI/x/releases/download/v1/a.zip", false).is_err());
+        assert!(p.check("C:/x.zip", false).is_err());
+        let r: Recipe = serde_json::from_value(json!({"id": "sigf/x", "version": "1.0.0"})).unwrap();
+        assert!(UrlPolicy::for_recipe(&r, false).check("https://thunderstore.io/package/download/a/b/1.0.0/", false).is_err());
     }
 
     #[test]

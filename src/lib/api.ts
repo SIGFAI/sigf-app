@@ -122,6 +122,18 @@ export async function openUrl(url: string) {
   window.open(url, '_blank');
 }
 
+/** A browser game plays in a child webview over `frame` (CSS pixels in the main window); no app commands there. */
+export type WebFrame = { x: number; y: number; w: number; h: number };
+export const webOpen = (url: string, frame: WebFrame) => invoke<void>('web_open', { url, frame });
+export const webFrame = (frame: WebFrame) => invoke<void>('web_frame', { frame });
+export const webFullscreen = (on: boolean) => invoke<void>('web_fullscreen', { on });
+export const webClose = () => invoke<void>('web_close');
+/** The game entered or left fullscreen (its own button, Esc, F11). Returns the unlisten function. */
+export async function onWebFullscreen(cb: (on: boolean) => void) {
+  const { listen } = await import('@tauri-apps/api/event');
+  return listen<boolean>('web://fullscreen', (e) => cb(e.payload));
+}
+
 export async function windowAction(a: 'minimize' | 'toggleMaximize' | 'close') {
   if (!inTauri) return;
   const { getCurrentWindow } = await import('@tauri-apps/api/window');

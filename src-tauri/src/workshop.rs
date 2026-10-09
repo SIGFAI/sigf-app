@@ -38,7 +38,7 @@ pub struct WorkshopError {
 }
 
 impl WorkshopError {
-    fn new(code: &str, message: impl Into<String>) -> Self {
+    pub(crate) fn new(code: &str, message: impl Into<String>) -> Self {
         Self { code: code.into(), message: message.into() }
     }
     fn failed(message: impl Into<String>) -> Self {
@@ -289,12 +289,17 @@ pub struct LibrarySource {
     pub id: Option<String>,
 }
 
-/// A named, ordered group of Workshop items for one game (docs/WORKSHOP.md section 4).
+/// A named, ordered group of mods for one game (docs/WORKSHOP.md section 4, docs/GAME-HUB.md section 6). Items are
+/// refs (`ts:...`, `nx:...`); a bare number is a Steam Workshop id. `appid` (Steam) or `game` (canonical id, for games
+/// not on Steam), at least one of them.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Library {
     pub id: String,
-    pub appid: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub appid: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub game: Option<String>,
     pub name: String,
     pub items: Vec<String>,
     #[serde(default)]
@@ -316,14 +321,21 @@ fn name_ok(s: &str) -> bool {
     !s.trim().is_empty() && s.chars().count() <= MAX_NAME && !s.chars().any(char::is_control)
 }
 
+/// A library item: a Workshop id (bare digits) or a mod ref (`crate::mods::valid_ref`).
+pub fn valid_library_item(s: &str) -> bool {
+    valid_item_id(s) || crate::mods::valid_ref(s)
+}
+
 fn valid_library(l: &Library) -> bool {
     valid_library_id(&l.id)
-        && valid_appid(&l.appid)
+        && (l.appid.is_some() || l.game.is_some())
+        && l.appid.as_deref().is_none_or(valid_appid)
+        && l.game.as_deref().is_none_or(crate::mods::valid_game)
         && name_ok(&l.name)
         && l.items.len() <= MAX_LIBRARY_ITEMS
-        && l.items.iter().all(|i| valid_item_id(i))
+        && l.items.iter().all(|i| valid_library_item(i))
         && l.added_by_us.len() <= MAX_LIBRARY_ITEMS
-        && l.added_by_us.iter().all(|i| valid_item_id(i))
+        && l.added_by_us.iter().all(|i| valid_library_item(i))
         && l.source.as_ref().is_none_or(|s| ["collection", "link"].contains(&s.kind.as_str()) && s.id.as_deref().is_none_or(valid_item_id))
 }
 
@@ -346,8 +358,11 @@ fn write_libraries(path: &Path, list: &[Library]) -> Result<(), String> {
     std::fs::rename(&tmp, path).map_err(|e| e.to_string())
 }
 
-/// Adds the library, or replaces the one with its id in place; a new one goes first.
-fn save_library(path: &Path, lib: Library) -> Result<Vec<Library>, String> {
+/// Adds the library, or replaces the one with its id in place; a new one goes first. An empty `appid` or `game` reads
+/// as absent.
+fn save_library(path: &Path, mut lib: Library) -> Result<Vec<Library>, String> {
+    lib.appid = lib.appid.filter(|a| !a.is_empty());
+    lib.game = lib.game.filter(|g| !g.is_empty());
     if !valid_library(&lib) {
         return Err("refused library".into());
     }
@@ -455,16 +470,20 @@ pub fn parse_library_link(link: &str) -> Option<LibraryLink> {
     let rest = rest.split('#').next().unwrap_or("");
     let (path, query) = rest.split_once('?').unwrap_or((rest, ""));
     let (appid, list) = path.trim_end_matches('/').split_once('/')?;
-    if !valid_appid(appid) {
+    // A Steam app id, or a game's canonical id for a library of a game outside Steam.
+    let numeric = appid.bytes().all(|b| b.is_ascii_digit());
+    if !(if numeric { valid_appid(appid) } else { crate::mods::valid_game(appid) }) {
         return None;
     }
     let mut items: Vec<String> = vec![];
     for raw in list.split(',').flat_map(|p| p.split("%2C")).flat_map(|p| p.split("%2c")) {
-        if !valid_item_id(raw) {
+        // Workshop ids or mod refs (`ts:Ns-Name`, the `:` possibly sent as %3A).
+        let item = percent_decode(raw)?;
+        if !valid_library_item(&item) {
             return None;
         }
-        if !items.iter().any(|i| i == raw) {
-            items.push(raw.to_string());
+        if !items.contains(&item) {
+            items.push(item);
         }
     }
     if items.is_empty() || items.len() > MAX_CALL_IDS {
@@ -482,6 +501,14 @@ pub fn parse_library_link(link: &str) -> Option<LibraryLink> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn library_links_with_refs() {
+        let l = parse_library_link("sigf://library/lethal/ts:notnotnotswipez-MoreCompany,gb%3AMod%3A123,456?name=Mix").unwrap();
+        assert_eq!(l.to_link(), "sigf://library/lethal/ts:notnotnotswipez-MoreCompany,gb:Mod:123,456?name=Mix");
+        assert!(parse_library_link("sigf://library/lethal/ts:../x").is_none());
+        assert!(parse_library_link("sigf://library/Bad_Game/1").is_none());
+    }
 
     #[test]
     fn ids() {
@@ -537,7 +564,8 @@ mod tests {
     fn lib(id: &str, name: &str) -> Library {
         Library {
             id: id.into(),
-            appid: "440".into(),
+            appid: Some("440".into()),
+            game: None,
             name: name.into(),
             items: vec!["3012345678".into(), "2987654321".into()],
             applied: false,
@@ -581,7 +609,16 @@ mod tests {
             lib("abcdefghjk", "   "),
             lib("abcdefghjk", &"x".repeat(81)),
             lib("abcdefghjk", "a\nb"),
-            Library { appid: "steam".into(), ..lib("abcdefghjk", "x") },
+            Library { appid: Some("steam".into()), ..lib("abcdefghjk", "x") },
+            Library { appid: None, game: None, ..lib("abcdefghjk", "x") },
+            Library { appid: Some(String::new()), game: None, ..lib("abcdefghjk", "x") },
+            Library { appid: None, game: Some("Lethal Company".into()), ..lib("abcdefghjk", "x") },
+            Library { appid: None, game: Some("x".repeat(41)), ..lib("abcdefghjk", "x") },
+            Library { items: vec!["xx:1".into()], ..lib("abcdefghjk", "x") },
+            Library { items: vec!["ts:a b".into()], ..lib("abcdefghjk", "x") },
+            Library { items: vec![format!("ts:{}", "a".repeat(118))], ..lib("abcdefghjk", "x") },
+            Library { items: vec!["ws:abc".into()], ..lib("abcdefghjk", "x") },
+            Library { added_by_us: vec!["ts:".into()], ..lib("abcdefghjk", "x") },
             Library { items: vec!["1".into(), "../x".into()], ..lib("abcdefghjk", "x") },
             Library { items: (1..=501).map(|i| i.to_string()).collect(), ..lib("abcdefghjk", "x") },
             Library { added_by_us: vec!["x".into()], ..lib("abcdefghjk", "x") },
@@ -596,6 +633,31 @@ mod tests {
         // One malformed entry does not take the others with it.
         std::fs::write(&p, r#"[{"id":"bad"},{"id":"cdefghjkmn","appid":"440","name":"ok","items":[],"created":1,"updated":2}]"#).unwrap();
         assert_eq!(load_libraries(&p).len(), 1);
+    }
+
+    #[test]
+    fn libraries_with_refs() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("libraries.json");
+        // Refs from every source next to bare Workshop ids, and a game that is not on Steam.
+        let items: Vec<String> = ["3012345678", "ts:BepInEx-BepInExPack", "nx:skyrimspecialedition:12604", "cf:238222", "mio:1:2", "gb:Mod:3", "mr:AANobbMI", "ws:42"]
+            .map(String::from)
+            .to_vec();
+        let l = Library { appid: None, game: Some("lethalcompany".into()), items: items.clone(), added_by_us: vec!["ts:BepInEx-BepInExPack".into()], ..lib("abcdefghjk", "Mixed") };
+        let list = save_library(&p, l).unwrap();
+        assert_eq!(list[0].items, items);
+        assert_eq!(load_libraries(&p), list);
+        let v = serde_json::to_value(&list[0]).unwrap();
+        assert_eq!(v["game"], "lethalcompany");
+        assert!(v.get("appid").is_none(), "absent, not null");
+        // Both set, and an empty appid sent by the UI reads as absent.
+        assert!(save_library(&p, Library { game: Some("tf2".into()), ..lib("bcdefghjkm", "Both") }).is_ok());
+        let saved = save_library(&p, Library { appid: Some(String::new()), game: Some("valheim".into()), ..lib("cdefghjkmn", "Empty appid") }).unwrap();
+        assert_eq!(saved[0].appid, None);
+        // A library saved by an older app (appid only, Workshop ids) still reads.
+        std::fs::write(&p, r#"[{"id":"cdefghjkmn","appid":"440","name":"Old","items":["1","2"],"created":1,"updated":2}]"#).unwrap();
+        assert_eq!(load_libraries(&p)[0].appid.as_deref(), Some("440"));
+        assert!(valid_library_item("1") && valid_library_item("ts:a-b") && !valid_library_item("0") && !valid_library_item("abc"));
     }
 
     #[test]

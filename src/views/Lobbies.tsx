@@ -22,7 +22,7 @@ function Players({ n, max, state }: { n: number; max: number; state: PublicLobby
   );
 }
 
-function LobbyRow({ ctx, l, i }: { ctx: Ctx; l: PublicLobby; i: number }) {
+export function LobbyRow({ ctx, l, i }: { ctx: Ctx; l: PublicLobby; i: number }) {
   const miss = missingOf(ctx, l.games);
   const [host, guest] = [l.games[0], l.games[1]];
   const known = ctx.catalog.find((m) => m.id === l.mashup.id);
@@ -53,7 +53,7 @@ function LobbyRow({ ctx, l, i }: { ctx: Ctx; l: PublicLobby; i: number }) {
 }
 
 /** Public lobbies, refreshed every 10 s while shown. */
-function useLobbies(ctx: Ctx, mashup?: string) {
+export function useLobbies(ctx: Ctx, mashup?: string) {
   const [list, setList] = useState<PublicLobby[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const owned = [...ctx.owned].sort().join(',');
@@ -200,9 +200,15 @@ function ServerPanel({ ctx, s }: { ctx: Ctx; s: HostedServer }) {
   );
 }
 
-/** Worlds of free servers this app ran, downloadable for 7 days after the session (secrets kept by the core). */
-export function HostedWorlds({ ctx }: { ctx: Ctx }) {
-  const list = ctx.worlds.filter((w) => w.lobby !== ctx.hosted?.lobby.id || !ctx.server || !SERVER_ACTIVE.includes(ctx.server.state));
+/** Worlds of free servers this app ran, downloadable for 7 days after the session (secrets kept by the core). `game`:
+ *  only the worlds of mashups that run on that game (the game page's Servers tab). */
+export function HostedWorlds({ ctx, game }: { ctx: Ctx; game?: string }) {
+  const list = ctx.worlds.filter((w) => {
+    if (w.lobby === ctx.hosted?.lobby.id && ctx.server && SERVER_ACTIVE.includes(ctx.server.state)) return false;
+    if (!game) return true;
+    const m = ctx.catalog.find((c) => c.id === w.mashupId);
+    return !!m && (m.needs.includes(game) || m.guest === game);
+  });
   if (!list.length) return null;
   return (
     <Section title={t('worlds.title')} sub={t('worlds.sub')}>
@@ -234,7 +240,7 @@ export function HostedWorlds({ ctx }: { ctx: Ctx }) {
 }
 
 /** The lobby this app hosts: link, live count, its free server if any, close. */
-function HostCard({ ctx }: { ctx: Ctx }) {
+export function HostCard({ ctx }: { ctx: Ctx }) {
   const h = ctx.hosted!;
   const l = h.lobby;
   const [copied, setCopied] = useState(false);

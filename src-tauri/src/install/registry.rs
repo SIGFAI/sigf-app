@@ -26,6 +26,24 @@ pub struct InstalledMod {
     /// The recipe's `requires_files`, resolved at install: checked again before every Play.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub requires_files: Vec<RequiredAt>,
+    /// Mod plans (`mod/<ref>`, `crate::mods`): every file downloaded, with the sha256 of what was installed and the
+    /// hash the source gave that was checked (`none` when the source gives none).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub files: Vec<ModFileRecord>,
+}
+
+/// One downloaded file of a mod plan, as installed.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModFileRecord {
+    pub name: String,
+    /// The ref (item or dependency) the file belongs to.
+    pub of: String,
+    /// The download URL without its query (CDN tokens are not kept).
+    pub url: String,
+    pub sha256: String,
+    /// `sha512`, `sha256`, `sha1`, `md5` or `none`.
+    pub verified: String,
 }
 
 /// One `requires_files` entry with the game folder it was checked in.

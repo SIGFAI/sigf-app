@@ -21,8 +21,9 @@ export type Privacy = {
 
 export const DEFAULT_PRIVACY: Privacy = { asked: false, storeArt: true, artSearch: true, lobbyGames: true, lanAddress: 'ask' };
 
-/** Picture hosts that are not SIGF's own: shown only with `storeArt` (Steam Workshop previews included). */
-const THIRD_PARTY_IMG = /^https:\/\/(cdn\.cloudflare\.steamstatic\.com|shared\.cloudflare\.steamstatic\.com|shared\.akamai\.steamstatic\.com|cdn1\.epicgames\.com|cdn2\.unrealengine\.com|cdn\.modrinth\.com|images\.steamusercontent\.com|steamuserimages-a\.akamaihd\.net)\//i;
+/** Picture hosts that are not SIGF's own: shown only with `storeArt` (Steam Workshop previews and the mod sources' icons
+ *  included: Thunderstore, CurseForge, Nexus Mods, GameBanana, mod.io, Modrinth). */
+const THIRD_PARTY_IMG = /^https:\/\/(cdn\.cloudflare\.steamstatic\.com|shared\.cloudflare\.steamstatic\.com|shared\.akamai\.steamstatic\.com|cdn1\.epicgames\.com|cdn2\.unrealengine\.com|cdn\.modrinth\.com|images\.steamusercontent\.com|steamuserimages-a\.akamaihd\.net|gcdn\.thunderstore\.io|cdn\.thunderstore\.io|ccdn\.thunderstore\.io|media\.forgecdn\.net|staticdelivery\.nexusmods\.com|images\.gamebanana\.com|thumb\.modcdn\.io)\//i;
 const SITE_IMG = /^https:\/\/sigf\.ai\//i;
 
 let state: Privacy | null = null;

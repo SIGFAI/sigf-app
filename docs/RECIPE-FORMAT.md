@@ -74,6 +74,9 @@ format: open, documented, imported by Prism, the Modrinth App and other launcher
 Passthrough crossovers (two games running together, for example GTA V × Minecraft) use the same Prism instance plus
 the host game's side.
 
+Single mods from the game hub (Modrinth, CurseForge) go into a SIGF-managed Prism instance per Minecraft version and
+loader ("SIGF 1.21.1 Fabric"), written by the core the same way: see docs/GAME-HUB.md section 4, "Minecraft: profiles".
+
 ## 4. The recipe: `mashup.json`
 
 Written by the SIGF publisher when a mashup is released (release assets on the mod's SIGFAI repository, then

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { Ctx } from '../App';
 import { launchGame } from '../lib/api';
 import { GameArt, Icon, STORE_LABEL } from '../ui';
+import { useInstalledMods } from '../lib/mods';
 import { t } from '../i18n';
 
 /** Epic build strings run to 40+ chars (`++Fortnite+Release-42.30-CL-58557680-Windows`): keep the version part. */
@@ -15,6 +16,9 @@ export function Library({ ctx }: { ctx: Ctx }) {
   const [store, setStore] = useState<string>('all');
   const games = (ctx.scan?.games ?? []).filter((g) => store === 'all' || g.store === store);
   const mc = ctx.scan?.launchers ?? [];
+  // Mods installed per game (engine installs; the game page has the rest).
+  const mods: Record<string, number> = {};
+  for (const r of useInstalledMods(null) ?? []) mods[r.game] = (mods[r.game] ?? 0) + 1;
 
   return (
     <div className="page">
@@ -35,15 +39,17 @@ export function Library({ ctx }: { ctx: Ctx }) {
           {games.map((g, i) => {
             const n = g.canon ? ctx.catalog.filter((m) => m.needs.includes(g.canon!) || m.guest === g.canon).length : 0;
             return (
-              <div key={g.key} className="tile" style={{ ['--i' as string]: i }}>
+              <div key={g.key} className="tile tile-open" style={{ ['--i' as string]: i }} onClick={() => ctx.game(g.canon ?? (g.store === 'steam' ? `steam:${g.storeId}` : `${g.store}:${g.storeId}`))} title={t('lib.openGame', { game: g.name })}>
                 <GameArt id={g.canon} name={g.name} src={g.art} wide={g.artWide} local={g.artLocal} heroLocal={g.heroLocal} wideLocal={g.wideLocal} />
                 <div className="tile-over">
                   <span className={`store-badge s-${g.store}`}>{STORE_LABEL[g.store]}</span>
                   {n > 0 && <span className="mods-badge">{t('lib.mashups', { count: n })}</span>}
+                  {(mods[g.canon ?? ''] ?? 0) > 0 && <span className="mods-badge mods-badge-2">{t('game.modsN', { count: mods[g.canon!] })}</span>}
                   <div className="tile-actions">
                     {g.canon && (
                       <button
-                        onClick={() => {
+                        onClick={(e) => {
+                          e.stopPropagation();
                           ctx.setPair([g.canon!, ctx.pair[1] === g.canon ? null : ctx.pair[1]]);
                           ctx.go('mix');
                         }}
@@ -51,19 +57,8 @@ export function Library({ ctx }: { ctx: Ctx }) {
                         {t('lib.mixAsHost')}
                       </button>
                     )}
-                    {g.store === 'steam' && ctx.workshopOn && (
-                      g.canon ? (
-                        <button className="ghost" onClick={() => ctx.workshop(g.storeId)} title={t('ws.workshopTitle')} aria-label={t('ws.workshopTitle')}>
-                          <Icon name="workshop" size={13} />
-                        </button>
-                      ) : (
-                        <button onClick={() => ctx.workshop(g.storeId)} title={t('ws.workshopTitle')}>
-                          <Icon name="workshop" size={12} /> {t('nav.workshop')}
-                        </button>
-                      )
-                    )}
                     {g.launch && (
-                      <button className="ghost" onClick={() => launchGame(g.launch!)} title={t('lib.launchVanilla')} aria-label={t('lib.launchVanilla')}>
+                      <button className="ghost" onClick={(e) => { e.stopPropagation(); void launchGame(g.launch!); }} title={t('lib.launchVanilla')} aria-label={t('lib.launchVanilla')}>
                         <Icon name="play" size={12} />
                       </button>
                     )}

@@ -6,14 +6,18 @@ import { findOwnCopies, installMashup, installedMods, isInstallError, onInstallP
 import { Icon, STORE_LABEL } from './ui';
 import { Home } from './views/Home';
 import { Library } from './views/Library';
+import { WebGames } from './views/WebGames';
 import { Build } from './views/Build';
 import { Live } from './views/Live';
 import { Queue } from './views/Queue';
 import { Detail } from './views/Detail';
 import { Picker } from './views/Picker';
 import { JoinSheet, Lobbies, type Joining } from './views/Lobbies';
-import { Workshop } from './views/Workshop';
+import { Games } from './views/Game';
+import { steamGameKey } from './views/Workshop';
 import { parseShare } from './lib/workshop';
+import { handleNxm, parseNxm, setGameDirs } from './lib/mods';
+import { errorText } from './views/Workshop';
 import { OwnCopySheet, type OwnAsk } from './views/OwnCopy';
 import { PrivacyPanel } from './views/Privacy';
 import { ReportSheet } from './views/Report';
@@ -33,7 +37,7 @@ const HEARTBEAT_MS = 30_000;
 const SERVER_POLL_MS = 10_000;
 const SERVER_WARN_MS = 15 * 60_000;   // a gentle warning when the 8 h session has this much left
 
-export type View = 'mix' | 'library' | 'live' | 'together' | 'build' | 'queue' | 'workshop';
+export type View = 'mix' | 'library' | 'web' | 'live' | 'together' | 'build' | 'queue' | 'games';
 export type Phase = 'download' | 'verify' | 'build' | 'install' | 'ready';
 /** `version`: the installed version, once the engine has it (lobbies pin one). */
 export type Install = { phase: Phase; pct: number; started: number; real?: boolean; version?: string };
@@ -87,24 +91,28 @@ export type Ctx = {
   join: (id: string, fromList?: boolean) => void;
   /** "Report a bug" for a mashup, or for the app itself (null): the report sheet, read before anything opens. */
   report: (m: Mashup | null) => void;
-  /** Opens the Workshop: a game's page (Steam app id) or the hub (null); `link` opens its import sheet (nothing is
-   *  subscribed before the player clicks), `lib` that library's sheet on the game's page. */
-  workshop: (appid: string | null, link?: string, lib?: string) => void;
+  /** Opens a game's page (game key: canonical id, or `steam:<appid>`) or the Games hub (null). `link` opens the import
+   *  sheet (nothing is installed before the player clicks), `lib` that library's sheet, `tab` a tab. */
+  game: (key: string | null, o?: { tab?: GameTab; link?: string; lib?: string }) => void;
   /** Steam Workshop runs through sigf-steam.exe, shipped with the Windows build only. */
   workshopOn: boolean;
+  /** Game id -> install folder from the scan (engine installs need it). */
+  gameDirs: Record<string, string>;
   /** A short message at the bottom of the window. */
   flash: (s: string) => void;
 };
 
-/** The Workshop view's subject; `link.n` tells a new arrival of the same link apart; `lib`: a library to open. */
-export type WorkshopNav = { appid: string | null; link?: { text: string; n: number }; lib?: string };
+export type GameTab = 'mods' | 'mashups' | 'servers' | 'libraries' | 'workshop';
+/** The Games view's subject (null: the hub); `n` tells a new arrival apart (the same link twice); `lib`: a library to open. */
+export type GameNav = { key: string | null; tab?: GameTab; link?: { text: string; n: number }; lib?: string; n?: number };
 
 const NAV: { id: View; label: Key; icon: string }[] = [
   { id: 'mix', label: 'nav.mix', icon: 'mix' },
   { id: 'library', label: 'nav.library', icon: 'library' },
+  { id: 'web', label: 'nav.web', icon: 'globe' },
   { id: 'live', label: 'nav.live', icon: 'tv' },
   { id: 'together', label: 'nav.lobbies', icon: 'people' },
-  { id: 'workshop', label: 'nav.workshop', icon: 'workshop' },
+  { id: 'games', label: 'nav.games', icon: 'games' },
   { id: 'build', label: 'nav.build', icon: 'build' },
   { id: 'queue', label: 'nav.installs', icon: 'queue' },
 ];
@@ -139,7 +147,7 @@ export default function App() {
   const [server, setServer] = useState<HostedServer | null>(null);
   const [serverError, setServerError] = useState<string | null>(null);
   const [worlds, setWorlds] = useState<HostedEntry[]>([]);
-  const [ws, setWs] = useState<WorkshopNav>({ appid: null });
+  const [nav, setNav] = useState<GameNav>({ key: null });
   const linkN = useRef(0);
   const privacy = usePrivacy();
   // The language: the saved choice once the privacy file is read, the system's until then. App re-renders on a switch.
@@ -429,6 +437,8 @@ export default function App() {
     for (const g of scan?.games ?? []) if (g.canon && g.installDir && !dirs[g.canon]) dirs[g.canon] = g.installDir;
     return dirs;
   }, [scan]);
+  // Mods installs started by an nxm:// link (outside any page) need the folders too.
+  useEffect(() => setGameDirs(gameDirs), [gameDirs]);
 
   function refreshInstalled() {
     return installedMods().then((list) =>
@@ -553,20 +563,27 @@ export default function App() {
     }
   };
 
-  /** Opens the Workshop (view, game, import link, library). */
-  const openWorkshop = (appid: string | null, link?: string, lib?: string) => {
+  /** Opens the Games view (hub, or a game's page with a tab, an import link, a library). */
+  const openGame = (key: string | null, o: { tab?: GameTab; link?: string; lib?: string } = {}) => {
     setDetail(null);
-    setView('workshop');
-    setWs({ appid, link: link ? { text: link, n: ++linkN.current } : undefined, lib });
+    setView('games');
+    const n = ++linkN.current;
+    setNav({ key, tab: o.tab, link: o.link ? { text: o.link, n } : undefined, lib: o.lib, n });
   };
 
-  /** A link from outside: a library (`sigf://library/...`) opens its game's Workshop page with the import sheet;
-   *  anything else is a lobby invite. */
+  /** A link from outside: a Nexus "Mod manager download" click (`nxm://...`) installs that file; a library
+   *  (`sigf://library/...`) opens its game's page with the import sheet; anything else is a lobby invite. */
   const onLink = (s: string) => {
+    if (parseNxm(s)) {
+      flash(t('nx.linkReceived'));
+      void handleNxm(s).then(({ name }) => flash(t('mods.installedToast', { name })), (e) => flash(errorText(e, '')));
+      return;
+    }
     const lib = parseShare(s);
-    if (lib) return openWorkshop(lib.appid, s);
+    if (lib) return openGame(lib.game ?? steamGameKey(ctxScan(), lib.appid), { link: s });
     void join(s);
   };
+  const ctxScan = () => ({ scan: latest.current.scan }) as Ctx;
 
   latest.current = { scan, owned, installs, hosted, server, join, link: onLink };
 
@@ -740,8 +757,9 @@ export default function App() {
     },
     join: (id, fromList) => void join(id, fromList),
     report: (m) => setReporting({ m }),
-    workshop: openWorkshop,
+    game: openGame,
     workshopOn,
+    gameDirs,
     flash,
   };
 
@@ -790,8 +808,8 @@ export default function App() {
       </header>
 
       <nav className="rail">
-        {NAV.filter((n) => n.id !== 'workshop' || workshopOn).map((n) => (
-          <button key={n.id} className={view === n.id ? 'on' : ''} onClick={() => (n.id === 'workshop' && view === 'workshop' ? setWs({ appid: null }) : setView(n.id))}>
+        {NAV.map((n) => (
+          <button key={n.id} className={view === n.id ? 'on' : ''} onClick={() => (n.id === 'games' && view === 'games' ? setNav({ key: null }) : setView(n.id))}>
             <Icon name={n.icon} size={22} />
             <span>{t(n.label)}</span>
             {n.id === 'queue' && active.length > 0 && (
@@ -809,14 +827,15 @@ export default function App() {
         </div>
       </nav>
 
-      <main className="main" key={view === 'workshop' ? `workshop:${ws.appid ?? ''}` : view}>
+      <main className="main" key={view === 'games' ? `games:${nav.key ?? ''}` : view}>
         {view === 'mix' && <Home ctx={ctx} query={query} />}
         {view === 'library' && <Library ctx={ctx} />}
         {view === 'live' && <Live />}
+        {view === 'web' && <WebGames />}
         {view === 'together' && <Lobbies ctx={ctx} />}
         {view === 'build' && <Build ctx={ctx} />}
         {view === 'queue' && <Queue ctx={ctx} />}
-        {view === 'workshop' && <Workshop ctx={ctx} nav={ws} />}
+        {view === 'games' && <Games ctx={ctx} nav={nav} />}
       </main>
 
       {detail && <Detail ctx={ctx} m={detail} onClose={() => setDetail(null)} />}

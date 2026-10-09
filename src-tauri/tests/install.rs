@@ -9,7 +9,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 /// These tests install from local files: dev mode (`SIGF_DEV_LOCAL_RECIPES=1` in the example CLI).
-const DEV: FetchOpts = FetchOpts { allow_local: true, max_bytes: 1 << 30, build: false };
+const DEV: FetchOpts = FetchOpts { allow_local: true, max_bytes: 1 << 30, build: false, mod_hosts: None };
 
 fn dev_engine(home: impl Into<PathBuf>, prism: Option<Prism>) -> Engine {
     let mut e = Engine::new(home, prism);

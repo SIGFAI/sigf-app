@@ -28,9 +28,15 @@ type Collection = { collection: WorkshopItem; items: WorkshopItem[] };
 /** What Steam says about one item on this PC (`workshop_state`). */
 export type ItemState = { id: string; subscribed: boolean; installed: boolean; downloading: boolean; needsUpdate: boolean; sizeBytes?: number };
 
+/**
+ * A library (docs/GAME-HUB.md section 6): `items` are mod refs (`ts:BepInEx-BepInExPack`, `nx:skyrimspecialedition:12604`,
+ * ...); a bare number is a Steam Workshop id, as libraries made before the game hub. `appid`: the game's Steam app id, or
+ * '' for a game that is not on Steam; `game`: its canonical id (`lethal`), when SIGF knows the game.
+ */
 export type Library = {
   id: string;
   appid: string; name: string; items: string[];
+  game?: string;
   applied: boolean;
   addedByUs: string[];
   source?: { kind: 'collection' | 'link'; id?: string };
@@ -412,64 +418,48 @@ function newLibraryId(): string {
   return id;
 }
 
-export function newLibrary(appid: string, name: string, items: string[] = [], source?: Library['source']): Library {
+export function newLibrary(appid: string, name: string, items: string[] = [], source?: Library['source'], game?: string): Library {
   const now = Date.now();
-  return { id: newLibraryId(), appid, name, items: [...new Set(items)], applied: false, addedByUs: [], source, created: now, updated: now };
+  return { id: newLibraryId(), appid, name, items: [...new Set(items)], applied: false, addedByUs: [], source, created: now, updated: now, ...(game ? { game } : {}) };
 }
 
-/**
- * Apply: subscribes every item of the library that is not subscribed yet. The ones it subscribed are recorded in
- * `addedByUs` (saved before Steam is asked, so a crash still knows them) so Remove takes back only those.
- */
-export async function applyLibrary(lib: Library): Promise<void> {
-  if (!lib.items.every((id) => states.get(lib.appid)?.get(id)?.state)) await readState(lib.appid, lib.items).catch(() => {});
-  const missing = lib.items.filter((id) => !isSubscribed(lib.appid, id));
-  const addedByUs = [...new Set([...lib.addedByUs.filter((id) => lib.items.includes(id)), ...missing])];
-  const cur = { ...lib, addedByUs, applied: false };
-  await saveLibrary(cur);
-  await subscribe(lib.appid, missing);
-  await saveLibrary({ ...cur, applied: true });
-}
-
-/**
- * Remove: unsubscribes what this library added. An item another applied library of the same game also holds stays
- * subscribed, and that library takes it over (its own Remove will take it back). Returns how many were kept.
- */
-export async function removeLibrary(lib: Library, all: Library[]): Promise<number> {
-  const others = all.filter((o) => o.id !== lib.id && o.appid === lib.appid && o.applied);
-  const kept = lib.addedByUs.filter((id) => others.some((o) => o.items.includes(id)));
-  const drop = lib.addedByUs.filter((id) => !kept.includes(id));
-  await unsubscribe(lib.appid, drop);
-  for (const o of others) {
-    const take = kept.filter((id) => o.items.includes(id) && !o.addedByUs.includes(id));
-    if (take.length) await saveLibrary({ ...o, addedByUs: [...o.addedByUs, ...take] });
-  }
-  await saveLibrary({ ...lib, applied: false, addedByUs: [] });
-  return kept.length;
+/** The Steam Workshop id a library ref names (a bare number, or `ws:<id>`), else null (another source's ref). */
+export function wsIdOf(ref: string): string | null {
+  const m = /^(?:ws:)?(\d{1,20})$/.exec(ref);
+  return m ? m[1] : null;
 }
 
 // ---------- Links ----------
 
 export const MAX_SHARE = 200;
 
-/** `sigf://library/{appid}/<ids>?name=<name>` (at most 200 items). */
-export function shareLink(lib: Pick<Library, 'appid' | 'items' | 'name'>): string {
-  return `sigf://library/${lib.appid}/${lib.items.slice(0, MAX_SHARE).join(',')}?name=${encodeURIComponent(lib.name)}`;
+/** A ref as a library link carries it: Workshop ids bare, every other source's ref as is. */
+const REF_RE = /^(?:\d{1,20}|(?:ts|cf|nx|mio|gb|mr|ws):[A-Za-z0-9_.:-]{1,116})$/;
+
+/**
+ * `sigf://library/{appid}/<refs>?name=<name>` (at most 200 items). A game that is not on Steam goes by its canonical id
+ * (`sigf://library/minecraft/mr:AANobbMI,...`); a Steam game keeps its app id, so links made before the game hub and
+ * Workshop-only links stay the same.
+ */
+export function shareLink(lib: Pick<Library, 'appid' | 'items' | 'name' | 'game'>): string {
+  const items = lib.items.slice(0, MAX_SHARE).map((r) => wsIdOf(r) ?? r);
+  return `sigf://library/${lib.appid || lib.game || ''}/${items.join(',')}?name=${encodeURIComponent(lib.name)}`;
 }
 
-type SharedLibrary = { appid: string; ids: string[]; name: string };
+/** `appid`: a Steam app id, or '' when the link names a canonical game (`game`). `ids`: refs, Workshop ids bare. */
+export type SharedLibrary = { appid: string; game?: string; ids: string[]; name: string };
 
 /** A library link as sent (`sigf://library/...`) or pasted from the web (`https://sigf.ai/library/...`). */
 export function parseShare(text: string): SharedLibrary | null {
-  const m = text.trim().match(/^(?:sigf:\/\/library\/|https?:\/\/(?:www\.)?sigf\.ai\/library\/)(\d{1,10})\/([\d,]+)\/?(?:\?(.*))?$/i);
+  const m = text.trim().match(/^(?:sigf:\/\/library\/|https?:\/\/(?:www\.)?sigf\.ai\/library\/)(\d{1,10}|[a-z0-9][a-z0-9-]{0,39})\/([A-Za-z0-9_.:,-]+)\/?(?:\?(.*))?$/i);
   if (!m) return null;
-  const ids = [...new Set(m[2].split(',').filter((x) => /^\d{1,20}$/.test(x)))].slice(0, MAX_SHARE);
+  const ids = [...new Set(m[2].split(',').filter((x) => REF_RE.test(x)).map((x) => wsIdOf(x) ?? x))].slice(0, MAX_SHARE);
   if (!ids.length) return null;
   let name = '';
   try {
     name = new URLSearchParams(m[3] ?? '').get('name')?.trim().slice(0, 80) ?? '';
   } catch {}
-  return { appid: m[1], ids, name };
+  return /^\d+$/.test(m[1]) ? { appid: m[1], ids, name } : { appid: '', game: m[1].toLowerCase(), ids, name };
 }
 
 /** A Steam Workshop link (`steamcommunity.com/sharedfiles/filedetails/?id=…`, `/workshop/filedetails/?id=…`): its id. */

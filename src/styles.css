@@ -921,3 +921,169 @@ textarea:focus { border-color: rgba(127, 224, 255, .5); }
   .ws-lib { flex-wrap: wrap; }
   .ws-import-grid, .ws-import-skel { grid-template-columns: repeat(4, 1fr); }
 }
+
+/* ---------- Game hub (views/Game.tsx) ---------- */
+/* One quiet hue per mod source: a dot, never a logo. */
+.src-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; flex: none; background: var(--c, var(--ink-3)); box-shadow: 0 0 8px -1px var(--c, transparent); }
+.src-ts { --c: #5a9cff; } .src-nx { --c: #f0a24a; } .src-cf { --c: #ff7a52; } .src-mio { --c: #4fd1c5; }
+.src-gb { --c: #ffd25a; } .src-mr { --c: #6fe39a; } .src-ws { --c: #9fb4cc; }
+.src-badge {
+  position: absolute; z-index: 1; top: 8px; left: 8px; display: inline-flex; align-items: center; gap: 6px; padding: 3px 8px 3px 7px; border-radius: 6px;
+  font: 500 9.5px var(--f-mono); letter-spacing: .08em; text-transform: uppercase; color: var(--ink); background: rgba(5, 5, 6, .74); border: 1px solid var(--line-2); backdrop-filter: blur(8px);
+}
+.src-badge em { font-style: normal; color: var(--ink-3); margin-left: 1px; }
+.card-pair .src-badge { position: static; margin-right: 4px; }
+.mod-nsfw { position: absolute; z-index: 1; top: 8px; right: 8px; color: #ff9aa8; border-color: rgba(255, 90, 110, .4); }
+.mod-card h3 { min-height: 0; -webkit-line-clamp: 2; }
+.mod-card .ws-card-body { gap: 6px; }
+.mod-by { margin-top: -3px; font-size: 11.5px; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mod-card .ws-card-foot { padding-top: 4px; }
+.mod-wait::before { background: linear-gradient(90deg, rgba(240, 162, 74, .2), rgba(255, 214, 140, .35)); }
+
+.src-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 20px; }
+.src-chip {
+  display: inline-flex; align-items: center; gap: 7px; height: 28px; padding: 0 11px; border-radius: 999px; border: 1px solid var(--line); font-size: 12px; color: var(--ink-3);
+  transition: color .2s, border-color .2s, background .2s;
+}
+.src-chip:hover:not(:disabled) { color: var(--ink); border-color: var(--line-2); }
+.src-chip.on { color: var(--ink); border-color: transparent; background: linear-gradient(var(--bg), var(--bg)) padding-box, var(--prism) border-box; }
+.src-chip em { font: normal 500 10.5px var(--f-mono); color: var(--ink-3); }
+.src-chip small { font: 500 9.5px var(--f-mono); letter-spacing: .1em; text-transform: uppercase; color: var(--ink-4); padding: 1px 6px; border: 1px dashed var(--line-2); border-radius: 5px; }
+.src-chip.soon { cursor: default; color: var(--ink-4); border-style: dashed; }
+.src-chip.soon .src-dot { filter: grayscale(1); opacity: .45; box-shadow: none; }
+.src-chip.err { color: var(--warn); border-color: rgba(255, 214, 140, .3); }
+.src-chip svg { flex: none; }
+.src-sep { width: 1px; height: 18px; margin: 0 4px; background: var(--line-2); }
+.src-nsfw { margin-left: auto; font: 500 11px var(--f-mono); }
+.src-chip.web small.why { text-transform: none; letter-spacing: 0; font: 500 10.5px var(--f-ui); color: var(--ink-3); border-style: dashed; }
+.src-chip.web .src-dot { opacity: .6; }
+.src-chip:disabled:not(.soon) { opacity: .45; cursor: default; }
+
+/* Link-only mods: secondary cards, a small way out instead of a primary button. */
+.mod-card-web { opacity: .78; }
+.mod-card-web:hover { opacity: 1; }
+.mod-card-web .ws-thumb img { filter: saturate(.55); }
+.mod-weblink {
+  display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 8px; border: 1px dashed var(--line-2);
+  font: 500 11.5px var(--f-ui); color: var(--ink-3); transition: color .2s, border-color .2s, background .2s;
+}
+.mod-weblink:hover { color: var(--ink); border-style: solid; background: rgba(255, 255, 255, .04); }
+.mod-card .ws-card-foot .mod-weblink { margin-right: auto; }
+.mod-none-here { display: grid; gap: 4px; padding: 22px 20px; margin-bottom: 8px; border-radius: 14px; border: 1px dashed var(--line-2); text-align: center; }
+.mod-none-here b { font-weight: 500; font-size: 14px; }
+.mod-none-here span { font-size: 12.5px; color: var(--ink-3); }
+.mod-web { margin-top: 22px; }
+.mod-web-toggle {
+  display: flex; align-items: center; gap: 10px; width: 100%; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--line); color: var(--ink-2); font-size: 13px; text-align: left;
+  transition: color .2s, border-color .2s, background .2s;
+}
+.mod-web-toggle:hover { color: var(--ink); border-color: var(--line-2); background: rgba(255, 255, 255, .02); }
+.mod-web-toggle span { font-weight: 500; }
+.mod-web-toggle small { flex: 1; min-width: 0; font-size: 12px; color: var(--ink-4); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mod-web-toggle svg:last-child { transition: transform .2s; }
+.mod-web-toggle.on svg:last-child { transform: rotate(180deg); }
+.mod-web .ws-grid { margin-top: 14px; }
+.mod-nxhint { margin: -8px 0 10px; }
+
+.nx-pill {
+  display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 12px; border-radius: 9px; border: 1px solid var(--line-2); font: 500 12px var(--f-ui); color: var(--ink-2);
+  max-width: 240px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; transition: color .2s, background .2s;
+}
+.nx-pill:hover { color: var(--ink); background: rgba(255, 255, 255, .05); }
+.nx-pill.on { color: var(--ink); border-color: rgba(240, 162, 74, .35); }
+
+.nxm-wait { margin: -8px 0 8px; padding: 16px; border-radius: 14px; border: 1px solid rgba(240, 162, 74, .32); background: radial-gradient(420px 140px at 0% 0%, rgba(240, 162, 74, .09), transparent 70%), rgba(255, 255, 255, .015); animation: rise .35s var(--ease-out); }
+.nxm-top { display: flex; align-items: center; gap: 14px; margin-bottom: 12px; }
+.nxm-top b { display: block; font-weight: 500; font-size: 14px; }
+.nxm-top small { font-size: 12.5px; color: var(--ink-3); }
+.nxm-ring { position: relative; width: 38px; height: 38px; flex: none; display: grid; place-items: center; border-radius: 50%; border: 1px solid rgba(240, 162, 74, .35); }
+.nxm-ring::after { content: ''; position: absolute; inset: -1px; border-radius: 50%; border: 2px solid transparent; border-top-color: #f0a24a; animation: spin 1.4s linear infinite; }
+.nxm-ring .src-dot { width: 10px; height: 10px; }
+.nxm-steps { margin-bottom: 12px; }
+.nxm-handler { align-items: center; margin: 0 0 12px; }
+.nxm-handler span { flex: 1; }
+.nxm-wait .host-actions { margin: 0; }
+
+.mod-progress { margin: -8px 0 8px; padding: 14px 16px 12px; border-radius: 14px; border: 1px solid var(--line-2); background: rgba(255, 255, 255, .02); position: relative; overflow: hidden; }
+.mod-progress > div { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 10px; }
+.mod-progress b { font-weight: 500; font-size: 13.5px; }
+.mod-progress div small { font: 12px var(--f-mono); color: var(--ink-2); }
+.mod-progress .bar { display: block; height: 3px; border-radius: 3px; background: rgba(255, 255, 255, .07); position: relative; overflow: hidden; margin-bottom: 10px; }
+.mod-progress .bar::after { content: ''; position: absolute; inset: 0; width: var(--p); background: var(--prism); transition: width .25s linear; }
+.mod-progress > small { font-size: 12px; color: var(--ink-3); }
+.mod-failed, .mod-why { margin: -8px 0 8px; }
+.mod-files { display: grid; gap: 1px; border-radius: 12px; overflow: hidden; border: 1px solid var(--line); background: var(--line); }
+.mod-file { display: flex; align-items: center; gap: 12px; padding: 10px 12px 10px 14px; background: var(--bg-2); }
+.mod-file > div { flex: 1; min-width: 0; }
+.mod-file b { display: flex; align-items: center; gap: 8px; font-weight: 500; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mod-file b .chip { backdrop-filter: none; background: rgba(255, 255, 255, .04); color: var(--ink-2); }
+.mod-file small { font: 11px var(--f-mono); color: var(--ink-3); }
+
+.nx-sheet { width: min(560px, 100%); }
+.nx-sheet h2 { font: 400 20px/1.2 var(--f-display); margin: 8px 0 8px; }
+.nx-acct { display: flex; align-items: center; gap: 14px; padding: 14px; border-radius: 14px; border: 1px solid var(--line-2); background: rgba(255, 255, 255, .02); }
+.nx-acct > div { flex: 1; min-width: 0; }
+.nx-acct b { display: block; font-weight: 500; font-size: 14px; }
+.nx-acct small { font-size: 12px; color: var(--ink-3); }
+.nx-avatar { width: 40px; height: 40px; flex: none; display: grid; place-items: center; border-radius: 50%; font: 400 16px var(--f-display); color: #1a0f02; background: linear-gradient(135deg, #ffd68c, #f0a24a); }
+.nx-avatar.off { background: rgba(255, 255, 255, .04); border: 1px dashed var(--line-2); }
+.nx-soon { padding: 32px 20px; }
+.nx-soon .src-dot { width: 12px; height: 12px; }
+.nx-toggle { display: flex; gap: 12px; align-items: flex-start; margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line); cursor: pointer; }
+.nx-toggle input { margin-top: 3px; accent-color: #7fe0ff; }
+.nx-toggle b { display: block; font-weight: 500; font-size: 13.5px; }
+.nx-toggle small { font-size: 12px; color: var(--ink-3); }
+.nx-key { margin-top: 12px; }
+.nx-key-open { display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--ink-3); padding: 4px 0; }
+.nx-key-open:hover { color: var(--ink); }
+.nx-key.open { padding: 14px; border-radius: 14px; border: 1px solid var(--line-2); background: rgba(255, 255, 255, .02); }
+.nx-key.open b { display: block; font-weight: 500; font-size: 14px; }
+.nx-key.open > form > small { display: block; font-size: 12px; color: var(--ink-3); margin-top: 2px; }
+.nx-key-steps { margin: 12px 0; }
+.nx-key-row { display: flex; gap: 8px; }
+.nx-key-row input {
+  flex: 1; min-width: 0; height: 38px; padding: 0 12px; border-radius: 10px; border: 1px solid var(--line-2); background: rgba(0, 0, 0, .25); color: var(--ink);
+  font: 13px var(--f-mono); outline: none;
+}
+.nx-key-row input:focus { border-color: rgba(240, 162, 74, .5); }
+.nx-key .ws-note { margin-top: 8px; }
+@media (max-width: 520px) { .nx-key-row { flex-direction: column; } }
+
+.ws-subnav { display: flex; align-items: center; gap: 14px; margin-bottom: 18px; }
+.ws-subnav .seg em { font: normal 500 10px var(--f-mono); margin-left: 6px; color: var(--ink-3); }
+.ws-subnav-hint { flex: 1; font-size: 12.5px; color: var(--ink-3); }
+.ws-sub-lede { margin: 0; color: var(--ink-3); font-size: 13px; }
+
+.restore-all { display: flex; align-items: center; gap: 8px; padding: 6px 6px 6px 14px; border-radius: 12px; background: rgba(5, 5, 6, .7); border: 1px solid rgba(255, 90, 110, .3); backdrop-filter: blur(10px); font-size: 13px; animation: pop .2s var(--ease-out); }
+.act-hero { height: 38px; padding: 0 20px; font-size: 13.5px; border-radius: 10px; }
+.game-missing { margin: 0 0 20px; }
+
+.lib-srcs { display: inline-flex; gap: 4px; margin-left: 10px; vertical-align: middle; }
+.src-tag { display: inline-flex; align-items: center; gap: 5px; }
+.ws-list-item .src-tag .src-dot { width: 6px; height: 6px; }
+.ws-game > span { position: relative; }
+.game-srcs { position: absolute; right: 13px; bottom: 14px; display: inline-flex; gap: 4px; }
+.tile-open { cursor: pointer; }
+.mods-badge-2 { background: linear-gradient(rgba(5, 5, 6, .85), rgba(5, 5, 6, .85)) padding-box, linear-gradient(100deg, #6fe39a, #7fe0ff) border-box; }
+@media (max-width: 900px) {
+  .src-nsfw { margin-left: 0; }
+  .ws-subnav { flex-wrap: wrap; }
+}
+
+/* Minecraft profile bar (views/McProfile.tsx): the SIGF Prism instance mods go into, and Play for it. */
+.mc-profile { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; margin-bottom: 14px; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--line); background: rgba(255, 255, 255, .02); }
+.mc-profile-pick { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; flex: 1; min-width: 0; }
+.mc-profile-label { font: 600 11px var(--f-ui); letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); }
+.mc-profile select { padding: 7px 10px; border-radius: 8px; border: 1px solid var(--line-2); background: var(--raise-2); color: var(--ink); font: 500 12.5px var(--f-ui); cursor: pointer; }
+.mc-profile .act:disabled { opacity: .5; cursor: default; filter: none; }
+.mc-profile-hint { flex-basis: 100%; margin: 0; font-size: 12px; color: var(--ink-3); }
+/* Browser games */
+.web-tile { cursor: pointer; }
+.web-search { height: 34px; width: 200px; padding: 0 12px; border-radius: 9px; background: rgba(255, 255, 255, .04); border: 1px solid var(--line); color: var(--ink); font: 13px var(--f-ui); }
+.web-player { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.web-bar { display: flex; align-items: center; gap: 12px; height: 52px; padding: 0 16px; flex: none; border-bottom: 1px solid var(--line); }
+.web-bar b { font-size: 14px; font-weight: 600; }
+.web-bar small { font: 11px var(--f-mono); color: var(--ink-4); }
+.web-hint { margin-left: auto; font: 11px var(--f-mono); color: var(--ink-3); }
+.web-frame { flex: 1; min-height: 0; background: #000; }
+.web-frame iframe { width: 100%; height: 100%; border: 0; display: block; }
