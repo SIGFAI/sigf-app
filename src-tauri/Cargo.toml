@@ -44,7 +44,7 @@ regex = "1"
 tauri-plugin-updater = "2"
 
 [target.'cfg(windows)'.dependencies]
-winreg = "0.55"
+winreg = "0.56"
 # The process list for the updater's "Close your game first" (src/update.rs).
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Diagnostics_ToolHelp", "Win32_System_Threading"] }
 
