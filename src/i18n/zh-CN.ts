@@ -861,6 +861,7 @@ export const zhCN: Dict = {
   'mac.stripTitle': "可在这台 Mac 上玩。",
   'mac.stripWine': "SIGF 在专用的 Windows 文件夹中运行 {game} 的 Windows 版，使用你的 Steam 副本。设置一次，之后在这里直接开玩。",
   'mac.stripPort': "SIGF 用开源 Mac 引擎 {engine} 和你副本中的文件来运行 {game}。设置一次，之后在这里直接开玩。",
+  'mac.stripPortNoData': "SIGF 用开源 Mac 引擎 {engine} 运行 {game}，免费的游戏内容由引擎自行下载。设置一次，之后在这里直接开玩。",
   'mac.stripNative': "{game} 有 Mac 版：在 Mac 版 Steam 中安装，然后在这里开玩。",
   'mac.hubTitle': "在 Mac 上玩",
   'mac.hubSub': "SIGF 能用你自己的副本在这台 Mac 上运行的 Windows 游戏。设置一次，之后像其他游戏一样开玩。",

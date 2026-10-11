@@ -14,6 +14,8 @@ const MAX_ARGS: usize = 32;
 const MAX_ARG: usize = 512;
 const MAX_PATH: usize = 260;
 const MAX_DATA_FILES: usize = 64;
+const MAX_CONFIG: usize = 8;
+const MAX_CONFIG_TEXT: usize = 16 * 1024;
 const MAX_ENGINES: usize = 64;
 
 /// Hosts an engine URL may name: GitHub release assets (`github.com/<owner>/<repo>/releases/download/...`, SIGFAI's
@@ -121,6 +123,8 @@ pub enum DataFrom {
     SteamWin,
     GogInstaller,
     Folder,
+    /// The engine needs no player data (OpenRA downloads the freeware content itself): nothing to copy, always ready.
+    None,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -129,11 +133,34 @@ pub struct PortData {
     pub from: DataFrom,
     #[serde(default)]
     pub appid: Option<String>,
+    /// Paths in the game folder, each segment matched case-insensitively (Windows data: `DIABDAT.MPQ` vs
+    /// `diabdat.mpq`); the copy keeps the folder's own case. `["."]`: the whole folder. Empty for `from: none`.
+    #[serde(default)]
     pub files: Vec<String>,
+    /// Copied too when present (`hellfire.mpq`), same rules as `files`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub optional: Vec<String>,
     /// The data counts as ready when one of these exists, relative to `~/Library/Application Support` (VCMI imports
     /// a GOG installer itself into `vcmi/`: `vcmi/Data/H3bitmap.lod`).
     #[serde(default)]
     pub markers: Vec<String>,
+    /// Where the data is copied (`ports/<game>/data` when absent): `{appsupport}/<path>`, `{prefs}/<path>` or
+    /// `{engine}[/<path>]` (`{engine}/Fallout CE.app/Contents/Resources`). See `split_rooted`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub into: Option<String>,
+}
+
+/// A file the engine reads, written by the core after the data copy and before each launch.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ConfigFile {
+    /// `{appsupport}/`, `{prefs}/`, `{engine}/` or `{data}/` and a relative file path.
+    pub path: String,
+    /// `{data}`, `{engine}`, `{appsupport}` and `{prefs}` are expanded (and nothing else).
+    pub text: String,
+    /// Written only when the file is missing (the player's own settings are kept); otherwise replaced each launch.
+    #[serde(default)]
+    pub keep: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -151,6 +178,8 @@ pub struct PortBlock {
     /// steam-win data without a `wine` block: the Wine engine (kind wine) that hosts Windows Steam in the prefix.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub via: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub config: Vec<ConfigFile>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -248,6 +277,62 @@ pub fn valid_rel_path(s: &str) -> bool {
         && !s.starts_with('/')
         && !s.chars().any(|c| c.is_control() || c == '\\' || c == ':')
         && s.trim_end_matches('/').split('/').all(|seg| !seg.is_empty() && seg != "." && seg != ".." && seg.trim() == seg)
+}
+
+/// The folder a port path (`data.into`, `config[].path`) starts from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Root {
+    /// `~/Library/Application Support`
+    AppSupport,
+    /// `~/Library/Preferences`
+    Prefs,
+    /// The unpacked engine folder.
+    Engine,
+    /// The copied data folder (config paths only).
+    Data,
+}
+
+const ROOTS: &[(&str, Root)] = &[("{appsupport}", Root::AppSupport), ("{prefs}", Root::Prefs), ("{engine}", Root::Engine), ("{data}", Root::Data)];
+
+/// Folders under `~/Library` a recipe never writes into: the app's own and Apple's.
+fn reserved_library_name(seg: &str) -> bool {
+    let s = seg.to_ascii_lowercase();
+    s == "ai.sigf.app" || s == "sigf" || s.starts_with("com.apple.")
+}
+
+/// `{appsupport}/<rel>`, `{prefs}/<rel>`, `{engine}[/<rel>]` or `{data}/<rel>`: the root and `rel` (`""` for a bare
+/// `{engine}`, the only root that may stand alone). `rel` follows `valid_rel_path`; under `~/Library` its first
+/// segment is not the app's own folder or a `com.apple.*` one. At most `MAX_PATH` bytes in all.
+pub fn split_rooted(s: &str) -> Option<(Root, &str)> {
+    if s.len() > MAX_PATH {
+        return None;
+    }
+    let (root, rest) = ROOTS.iter().find_map(|(tag, r)| s.strip_prefix(tag).map(|rest| (*r, rest)))?;
+    let rel = match rest.strip_prefix('/') {
+        Some(r) => r,
+        None if rest.is_empty() => "",
+        None => return None,
+    };
+    if rel.is_empty() {
+        return (root == Root::Engine).then_some((root, ""));
+    }
+    if !valid_rel_path(rel) {
+        return None;
+    }
+    if matches!(root, Root::AppSupport | Root::Prefs) && rel.split('/').next().is_some_and(reserved_library_name) {
+        return None;
+    }
+    Some((root, rel))
+}
+
+/// `data.into`: any root but `{data}`.
+pub fn valid_into(s: &str) -> bool {
+    split_rooted(s).is_some_and(|(r, _)| r != Root::Data)
+}
+
+/// `config[].path`: a file under any root (not a bare root, not a folder path ending in `/`).
+pub fn valid_config_path(s: &str) -> bool {
+    split_rooted(s).is_some_and(|(_, rel)| !rel.is_empty() && !rel.ends_with('/'))
 }
 
 /// An env key: `[A-Z0-9_]+` starting with a letter, not one the core sets, not `DYLD_*` / `LD_*`.
@@ -378,6 +463,27 @@ fn check_wine(w: &WineBlock, engines: &[MacEngine]) -> Result<(), MacError> {
     Ok(())
 }
 
+fn check_config(p: &PortBlock) -> Result<(), MacError> {
+    if p.config.len() > MAX_CONFIG {
+        return Err(bad(format!("port.config: at most {MAX_CONFIG} files")));
+    }
+    for (i, c) in p.config.iter().enumerate() {
+        if !valid_config_path(&c.path) {
+            return Err(bad(format!("port.config: bad path {}", c.path)));
+        }
+        if p.data.from == DataFrom::None && split_rooted(&c.path).is_some_and(|(r, _)| r == Root::Data) {
+            return Err(bad(format!("port.config: {} is under {{data}}, and from none has no data folder", c.path)));
+        }
+        if c.text.len() > MAX_CONFIG_TEXT || c.text.contains('\0') {
+            return Err(bad(format!("port.config: {}: text over {MAX_CONFIG_TEXT} bytes or with NUL", c.path)));
+        }
+        if p.config[..i].iter().any(|o| o.path.eq_ignore_ascii_case(&c.path)) {
+            return Err(bad(format!("port.config: {} twice", c.path)));
+        }
+    }
+    Ok(())
+}
+
 fn check_port(p: &PortBlock, engines: &[MacEngine]) -> Result<(), MacError> {
     if engines.iter().find(|e| e.id == p.engine).map(|e| e.kind) != Some(EngineKind::Native) {
         return Err(bad(format!("port.engine {} is not a native engine of the list", p.engine)));
@@ -389,9 +495,23 @@ fn check_port(p: &PortBlock, engines: &[MacEngine]) -> Result<(), MacError> {
         (_, Some(a)) if !crate::workshop::valid_appid(a) => return Err(bad(format!("port.data: bad appid {a}"))),
         _ => {}
     }
-    if d.files.is_empty() || d.files.len() > MAX_DATA_FILES {
+    if d.from == DataFrom::None {
+        if !d.files.is_empty() || !d.optional.is_empty() || !d.markers.is_empty() || d.into.is_some() || d.appid.is_some() {
+            return Err(bad("port.data: from none takes no files, optional, markers, into or appid"));
+        }
+    } else if d.files.is_empty() || d.files.len() > MAX_DATA_FILES {
         return Err(bad(format!("port.data.files: 1..={MAX_DATA_FILES} paths")));
     }
+    if d.optional.len() > MAX_DATA_FILES {
+        return Err(bad(format!("port.data.optional: at most {MAX_DATA_FILES} paths")));
+    }
+    if let Some(f) = d.optional.iter().find(|f| !valid_rel_path(f)) {
+        return Err(bad(format!("port.data.optional: bad path {f}")));
+    }
+    if let Some(i) = d.into.as_deref().filter(|i| !valid_into(i)) {
+        return Err(bad(format!("port.data.into: {{appsupport}}/, {{prefs}}/ or {{engine}} and a plain relative path: {i}")));
+    }
+    check_config(p)?;
     // `["."]` alone: the whole game folder (GeneralsX needs all of it).
     let whole = d.files.len() == 1 && d.files[0] == ".";
     if let Some(f) = d.files.iter().find(|f| !whole && !valid_rel_path(f)) {
@@ -639,6 +759,11 @@ pub(crate) mod tests {
         assert!(bad_engine(&|e| e["extra"] = json!(1)));
         assert!(bad_engine(&|e| e["id"] = json!("dxmt-0.80")), "duplicate id");
         assert!(!bad_engine(&|e| e["url"] = json!("https://release-assets.githubusercontent.com/github-production-release-asset/1/x.tar.xz")));
+        // GitHub serves a `+` in an asset name as %2B (JA2 Stracciatella); encoded dots, slashes and backslashes stay out.
+        assert!(engine_url_ok("https://github.com/ja2-stracciatella/ja2-stracciatella/releases/download/v0.22.1/ja2-stracciatella_0.22.1-git%2B11e9430_macos.dmg"));
+        assert!(!engine_url_ok("https://github.com/a/b/releases/download/v1/%2E%2E%2Fx.tar.xz"));
+        assert!(!engine_url_ok("https://github.com/a/b/releases/download/v1/x%2Fy.tar.xz"));
+        assert!(!engine_url_ok("https://github.com/a/b/releases/download/v1/x%5Cy.tar.xz"));
     }
 
     #[test]
@@ -709,6 +834,96 @@ pub(crate) mod tests {
         let c = check(&with(native.clone(), |_| {})).unwrap();
         assert!(c.engines.is_empty());
         assert!(check(&with(native, |g| g["native"]["steamAppId"] = json!("x"))).is_err());
+    }
+
+    fn port_game(f: impl FnOnce(&mut serde_json::Value)) -> String {
+        let mut g = json!({
+            "game": "devilutionx", "route": "native-port",
+            "port": { "engine": "vcmi-1.6", "data": { "from": "folder", "files": ["DIABDAT.MPQ"] }, "launch": ["devilutionx.app/Contents/MacOS/devilutionx"] }
+        });
+        f(&mut g);
+        with(g, |_| {})
+    }
+
+    #[test]
+    fn data_into_roots() {
+        for ok in ["{appsupport}/diasurgical/devilution", "{prefs}/openmw", "{engine}/Fallout CE.app/Contents/Resources", "{engine}", "{engine}/", "{appsupport}/OpenRCT2/"] {
+            assert!(valid_into(ok), "{ok}");
+            assert!(check(&port_game(|g| g["port"]["data"]["into"] = json!(ok))).is_ok(), "{ok}");
+        }
+        for bad in [
+            "", "{appsupport}", "{appsupport}/", "{prefs}", "{data}/x", "{home}/x", "/Users/x", "Library/x", "{appsupport}x",
+            "{appsupport}/../x", "{appsupport}/a/../../x", "{appsupport}/./x", "{appsupport}//x", "{appsupport}/a\\b", "{appsupport}/C:x",
+            "{engine}/../vcmi", "{appsupport}/ai.sigf.app/macplay", "{appsupport}/SIGF", "{prefs}/com.apple.dock.plist", "{appsupport}/ x",
+            &format!("{{appsupport}}/{}", "a".repeat(260)),
+        ] {
+            assert!(!valid_into(bad), "{bad:?}");
+            assert!(check(&port_game(|g| g["port"]["data"]["into"] = json!(bad))).is_err(), "{bad:?}");
+        }
+        assert_eq!(split_rooted("{engine}/a/b"), Some((Root::Engine, "a/b")));
+        assert_eq!(split_rooted("{engine}"), Some((Root::Engine, "")));
+        // Optional files: same rules as files.
+        assert!(check(&port_game(|g| g["port"]["data"]["optional"] = json!(["hellfire.mpq", "hfmonk.mpq"]))).is_ok());
+        assert!(check(&port_game(|g| g["port"]["data"]["optional"] = json!(["../hellfire.mpq"]))).is_err());
+        assert!(check(&port_game(|g| g["port"]["data"]["optional"] = json!(vec!["a"; 65]))).is_err());
+    }
+
+    #[test]
+    fn config_paths() {
+        let cfg = |path: &str| json!([{ "path": path, "text": "data={data}\n", "keep": true }]);
+        for ok in ["{prefs}/openmw/openmw.cfg", "{appsupport}/OpenRCT2/config.ini", "{engine}/fallout.cfg", "{data}/ddraw.ini"] {
+            assert!(valid_config_path(ok), "{ok}");
+            assert!(check(&port_game(|g| g["port"]["config"] = cfg(ok))).is_ok(), "{ok}");
+        }
+        for bad in ["{engine}", "{engine}/", "{prefs}/openmw/", "{data}", "{data}/../x.cfg", "{appsupport}/ai.sigf.app/x.json", "/etc/hosts", "openmw.cfg", "{home}/.zshrc"] {
+            assert!(!valid_config_path(bad), "{bad:?}");
+            assert!(check(&port_game(|g| g["port"]["config"] = cfg(bad))).is_err(), "{bad:?}");
+        }
+        let many: Vec<serde_json::Value> = (0..9).map(|i| json!({ "path": format!("{{engine}}/{i}.cfg"), "text": "" })).collect();
+        assert!(check(&port_game(|g| g["port"]["config"] = json!(many))).is_err());
+        assert!(check(&port_game(|g| g["port"]["config"] = json!([{ "path": "{engine}/a.cfg", "text": "x".repeat(MAX_CONFIG_TEXT + 1) }]))).is_err());
+        assert!(check(&port_game(|g| g["port"]["config"] = json!([{ "path": "{engine}/a.cfg", "text": "a\u{0}b" }]))).is_err());
+        assert!(check(&port_game(|g| g["port"]["config"] = json!([{ "path": "{engine}/a.cfg", "text": "" }, { "path": "{engine}/A.cfg", "text": "" }]))).is_err());
+        assert!(check(&port_game(|g| g["port"]["config"] = json!([{ "path": "{engine}/a.cfg", "text": "", "mode": "755" }]))).is_err());
+        // keep defaults to false.
+        let c = check(&port_game(|g| g["port"]["config"] = json!([{ "path": "{engine}/a.cfg", "text": "x" }]))).unwrap();
+        assert!(!c.game.port.unwrap().config[0].keep);
+    }
+
+    #[test]
+    fn data_from_none() {
+        let none = |g: &mut serde_json::Value| {
+            g["port"]["data"] = json!({ "from": "none" });
+        };
+        let c = check(&port_game(none)).unwrap();
+        assert_eq!(c.game.port.as_ref().unwrap().data.from, DataFrom::None);
+        assert!(c.steam_appid().is_none() && c.wine_engines().is_none());
+        for extra in [json!({ "files": ["x"] }), json!({ "optional": ["x"] }), json!({ "markers": ["x"] }), json!({ "into": "{engine}" }), json!({ "appid": "1" })] {
+            assert!(check(&port_game(|g| {
+                none(g);
+                for (k, v) in extra.as_object().unwrap() {
+                    g["port"]["data"][k] = v.clone();
+                }
+            }))
+            .is_err(), "{extra}");
+        }
+        assert!(check(&port_game(|g| {
+            none(g);
+            g["port"]["via"] = json!("wine-sikarugir-11.0-1");
+        }))
+        .is_err());
+        assert!(check(&port_game(|g| {
+            none(g);
+            g["port"]["config"] = json!([{ "path": "{data}/x.cfg", "text": "" }]);
+        }))
+        .is_err());
+        assert!(check(&port_game(|g| {
+            none(g);
+            g["port"]["config"] = json!([{ "path": "{appsupport}/OpenRA/settings.yaml", "text": "", "keep": true }]);
+        }))
+        .is_ok());
+        // Other sources still need files.
+        assert!(check(&port_game(|g| g["port"]["data"] = json!({ "from": "folder" }))).is_err());
     }
 
     #[test]

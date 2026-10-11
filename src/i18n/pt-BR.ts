@@ -848,6 +848,7 @@ export const ptBR: Dict = {
   'mac.stripTitle': "Roda neste Mac.",
   'mac.stripWine': "O SIGF roda a versão Windows de {game} numa pasta Windows própria, com sua cópia do Steam. Configure uma vez e jogue daqui.",
   'mac.stripPort': "O SIGF roda {game} com {engine}, uma engine de código aberto para Mac, e os arquivos da sua cópia. Configure uma vez e jogue daqui.",
+  'mac.stripPortNoData': "O SIGF roda {game} com {engine}, uma engine de código aberto para Mac que baixa sozinha o conteúdo gratuito do jogo. Configure uma vez e jogue daqui.",
   'mac.stripNative': "{game} tem versão Mac: instale no Steam para Mac e jogue daqui.",
   'mac.hubTitle': "Jogar no Mac",
   'mac.hubSub': "Jogos de Windows que o SIGF roda neste Mac com a sua própria cópia. Configure uma vez e jogue como qualquer outro jogo.",

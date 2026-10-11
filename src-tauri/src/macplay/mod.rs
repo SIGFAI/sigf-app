@@ -269,13 +269,16 @@ fn steam_win_source(layout: &Layout, game: &str, appid: &str) -> Option<PathBuf>
     wine::steam_game_dir(&own, appid).or_else(|| wine::prefix_steams(layout).into_iter().find_map(|(_, root)| wine::steam_game_dir(&root, appid)))
 }
 
-/// The user's `Library/Application Support` (where port markers are looked for).
-fn app_support() -> Option<PathBuf> {
-    cfg!(target_os = "macos").then(crate::install::user_data_dir).flatten()
+/// A port's folders: its engine folder and the user's `~/Library` (where `{appsupport}` / `{prefs}` paths and markers
+/// are).
+fn port_dirs<'a>(layout: &Layout, c: &'a Checked) -> Option<(&'a recipe::PortBlock, port::Dirs)> {
+    let p = c.game.port.as_ref()?;
+    let e = c.engine(&p.engine)?;
+    Some((p, port::Dirs::user(engine::engine_dir(layout, e, None))))
 }
 
 fn data_ready(layout: &Layout, c: &Checked) -> bool {
-    c.game.port.as_ref().is_some_and(|p| port::data_ready(layout, &c.game.game, p, app_support().as_deref()))
+    port_dirs(layout, c).is_some_and(|(p, d)| port::data_ready(layout, &c.game.game, p, &d))
 }
 
 /// The prefix's Wine for a recipe with a `wine` block or a port's `via`, its engine (and runtime) ready, with the
@@ -360,6 +363,9 @@ pub fn status(layout: &Layout, c: &Checked) -> MacStatus {
                     s.game = if ready { "installed" } else { "missing" };
                 }
                 s.disk.prefix_bytes += dir_size(&layout.port(game));
+                if let Some((p, d)) = port_dirs(layout, c) {
+                    s.disk.prefix_bytes += port::into_bytes(layout, game, p, &d);
+                }
             }
         }
         Route::Native => {
@@ -408,7 +414,7 @@ pub fn setup(layout: &Layout, c: &Checked, on: &mut dyn FnMut(&str, u64, u64)) -
         let e = c.engine(&p.engine).ok_or_else(|| MacError::new("badRecipe", "port engine missing"))?;
         engine::ensure(layout, e, None, &log, on)?;
         // steam-win data: copied as soon as Windows Steam has the game (mac_copy_data or the next setup otherwise).
-        // gog-installer data: the engine imports it itself (VCMI's launcher).
+        // gog-installer data: the engine imports it itself (VCMI's launcher). `from: none`: nothing to copy.
         copy_steam_data(layout, c, on)?;
     }
     on("ready", 0, 0);
@@ -416,14 +422,14 @@ pub fn setup(layout: &Layout, c: &Checked, on: &mut dyn FnMut(&str, u64, u64)) -
     Ok(status(layout, c))
 }
 
-/// A steam-win port: copies the game folder from a prefix's Windows Steam into `ports/<game>/data` when the game is
-/// there; Ok(false) when it is not installed yet.
+/// A steam-win port: copies the game folder from a prefix's Windows Steam into the data folder (`ports/<game>/data`
+/// or `data.into`) when the game is there, then writes the config files; Ok(false) when it is not installed yet.
 fn copy_steam_data(layout: &Layout, c: &Checked, on: &mut dyn FnMut(&str, u64, u64)) -> Result<bool, MacError> {
-    let Some(p) = &c.game.port else { return Ok(false) };
+    let Some((p, dirs)) = port_dirs(layout, c) else { return Ok(false) };
     let (DataFrom::SteamWin, Some(appid)) = (p.data.from, p.data.appid.as_deref()) else { return Ok(false) };
     let Some(src) = steam_win_source(layout, &c.game.game, appid) else { return Ok(false) };
     on("data", 0, 0);
-    port::copy_data(layout, &c.game.game, p, &src)?;
+    port::copy_data(layout, &c.game.game, p, &dirs, &src)?;
     Ok(true)
 }
 
@@ -506,7 +512,10 @@ pub fn play(layout: &Layout, c: &Checked, direct: bool) -> Result<Option<String>
                     return Err(MacError::new("dataMissing", "the game's data files are not copied yet"));
                 }
             }
-            let child = port::launch(&dir, &port::data_dir(layout, game), p, &layout.log(game))?;
+            let dirs = port::Dirs::user(dir);
+            let data = port::data_target(layout, game, p, &dirs)?;
+            port::write_config(p, &dirs, &data)?;
+            let child = port::launch(&dirs, &data, p, &layout.log(game))?;
             track(game, "game", child);
             Ok(None)
         }
@@ -558,6 +567,15 @@ pub fn remove(layout: &Layout, game: &str, what: &str) -> Result<(), MacError> {
         Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(MacError::io(p, e)),
         _ => Ok(()),
     };
+    // What a port copied or wrote outside `ports/<game>` (a `data.into` folder, config under ~/Library), first: an
+    // `{engine}` path is still resolvable before the engine goes.
+    if what != "engine" {
+        if let Some((p, d)) = saved.as_ref().and_then(|c| port_dirs(layout, c)) {
+            let data = port::data_target(layout, game, p, &d).unwrap_or_else(|_| port::data_dir(layout, game));
+            port::remove_config(p, &d, &data);
+            port::remove_data(layout, game, p, &d);
+        }
+    }
     if what == "engine" || what == "all" {
         if let Some(c) = &saved {
             let mine = engine_dirs(layout, c);
@@ -688,11 +706,14 @@ pub async fn mac_pick_data(window: tauri::WebviewWindow, game: String) -> Result
     require_mac()?;
     let layout = Layout::from_env();
     let c = load_saved(&layout, &game)?;
-    let p = c.game.port.clone().ok_or_else(|| MacError::new("badRecipe", "not a native port"))?;
+    let (p, dirs) = port_dirs(&layout, &c).map(|(p, d)| (p.clone(), d)).ok_or_else(|| MacError::new("badRecipe", "not a native port"))?;
+    if p.data.from == DataFrom::None {
+        return Err(MacError::new("badRecipe", "this port needs no game files"));
+    }
     let Some(folder) = pick_folder(&window, &c.game.name).await else { return Ok(status(&layout, &c)) };
     off_thread(move || {
         let _g = MAC_LOCK.lock().unwrap_or_else(|p| p.into_inner());
-        port::copy_data(&layout, &game, &p, &folder)?;
+        port::copy_data(&layout, &game, &p, &dirs, &folder)?;
         Ok(status(&layout, &c))
     })
     .await
@@ -778,6 +799,21 @@ mod tests {
         assert_eq!(stop(&layout, "skyrim").unwrap_err().code, "unsupported");
         assert_eq!(store(&layout, "skyrim").unwrap_err().code, "unsupported");
         assert!(scan_prefix_games().is_empty());
+    }
+
+    #[test]
+    fn port_without_data_reads_ready() {
+        let t = tempfile::tempdir().unwrap();
+        let layout = Layout::new(t.path().to_path_buf());
+        let g = serde_json::json!({
+            "game": "openra", "name": "OpenRA", "route": "native-port",
+            "port": { "engine": "vcmi-1.6", "data": { "from": "none" }, "launch": ["OpenRA.app/Contents/MacOS/OpenRA"] }
+        });
+        let c = recipe::check(&serde_json::json!({ "game": g, "engines": recipe::tests::engines() }).to_string()).unwrap();
+        assert_eq!(c.engines.len(), 1);
+        let s = status(&layout, &c);
+        assert_eq!((s.route, s.engine, s.prefix, s.store, s.game, s.data), (Some("native-port"), "missing", "ready", "installed", "installed", Some("ready")));
+        assert!(data_ready(&layout, &c));
     }
 
     #[test]

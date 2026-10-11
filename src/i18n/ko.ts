@@ -860,6 +860,7 @@ export const ko: Dict = {
   'mac.stripTitle': "이 Mac에서 플레이할 수 있습니다.",
   'mac.stripWine': "SIGF가 내 Steam 사본으로 {game}의 Windows 버전을 전용 Windows 폴더에서 실행합니다. 한 번 설정하면 여기서 바로 플레이.",
   'mac.stripPort': "SIGF가 오픈 소스 Mac 엔진 {engine}과(와) 내 사본의 파일로 {game}을(를) 실행합니다. 한 번 설정하면 여기서 바로 플레이.",
+  'mac.stripPortNoData': "SIGF가 오픈 소스 Mac 엔진 {engine}으로 {game}을(를) 실행합니다. 무료 게임 콘텐츠는 엔진이 직접 받아옵니다. 한 번 설정하면 여기서 바로 플레이.",
   'mac.stripNative': "{game}은(는) Mac 버전이 있습니다. Mac용 Steam에서 설치한 뒤 여기서 플레이하세요.",
   'mac.hubTitle': "Mac에서 플레이",
   'mac.hubSub': "SIGF가 내 사본으로 이 Mac에서 실행할 수 있는 Windows 게임. 한 번 설정하면 다른 게임처럼 플레이됩니다.",

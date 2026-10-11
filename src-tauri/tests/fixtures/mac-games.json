@@ -45,6 +45,159 @@
       "sha256": "c5c0ef55608297c1d41bc3d0e5ce06b607441737e4f7cda080432ab254962a09",
       "size": 31334759,
       "kind": "native"
+    },
+    {
+      "id": "openmw-0.51.0",
+      "name": "OpenMW",
+      "version": "0.51.0",
+      "kind": "native",
+      "url": "https://github.com/OpenMW/openmw/releases/download/openmw-0.51.0/OpenMW-0.51.0-macOS-arm64.dmg",
+      "sha256": "76bc0436413ed500dcd846a2cc3889711af948645bdd4eafd36ad16bc0c5615c",
+      "size": 137461865
+    },
+    {
+      "id": "openrct2-0.5.6",
+      "name": "OpenRCT2",
+      "version": "0.5.6",
+      "kind": "native",
+      "url": "https://github.com/OpenRCT2/OpenRCT2/releases/download/v0.5.6/OpenRCT2-v0.5.6-macos-universal.zip",
+      "sha256": "5f57e48dbe438fd6fd5059954afe521a01365a36c11085b190067ea3204b6565",
+      "size": 115854346
+    },
+    {
+      "id": "devilutionx-1.5.5",
+      "name": "DevilutionX",
+      "version": "1.5.5",
+      "kind": "native",
+      "url": "https://github.com/diasurgical/DevilutionX/releases/download/1.5.5/devilutionx-macOS-universal.dmg",
+      "sha256": "10ecd55caf4239d087bc91bce7538943705399b0b2abcff71c347ddbf01d30c6",
+      "size": 26642310
+    },
+    {
+      "id": "fallout1-ce-1.1.0",
+      "name": "Fallout Community Edition",
+      "version": "1.1.0",
+      "kind": "native",
+      "url": "https://github.com/alexbatalov/fallout1-ce/releases/download/v1.1.0/fallout-ce-macos.dmg",
+      "sha256": "db8833e4fe452e5cdff16a4c37893be0a4e5f6b473abe5ae4839a3ba61c11a2c",
+      "size": 5049524
+    },
+    {
+      "id": "fallout2-ce-1.3.0",
+      "name": "Fallout 2 Community Edition",
+      "version": "1.3.0",
+      "kind": "native",
+      "url": "https://github.com/alexbatalov/fallout2-ce/releases/download/v1.3.0/fallout2-ce-macos.dmg",
+      "sha256": "a1687701c8a482e57ac41acb798da8706c509fca75944466a55eaf00c53a7db3",
+      "size": 4910819
+    },
+    {
+      "id": "uzdoom-5.0.3",
+      "name": "UZDoom",
+      "version": "5.0.3",
+      "kind": "native",
+      "url": "https://github.com/UZDoom/UZDoom/releases/download/5.0.3/MacOS-UZDoom-Release-ARM64.dmg",
+      "sha256": "789465d31dd970c3bff7b929c7f74d090f730d8934a3a0f7aef92befd5582666",
+      "size": 32247467
+    },
+    {
+      "id": "raze-1.11.0",
+      "name": "Raze",
+      "version": "1.11.0",
+      "kind": "native",
+      "url": "https://github.com/ZDoom/Raze/releases/download/1.11.0/raze-macos-1.11.0.zip",
+      "sha256": "b7980849a507cfcfeaf8f76298c032bfe4415b2f246f41e3c0c9a6291770c70c",
+      "size": 31930373
+    },
+    {
+      "id": "openra-20250330",
+      "name": "OpenRA",
+      "version": "release-20250330",
+      "kind": "native",
+      "url": "https://github.com/OpenRA/OpenRA/releases/download/release-20250330/OpenRA-release-20250330.dmg",
+      "sha256": "2a78cd58603fd06ed6006ae5916065455a7ac7c1290dba1d06c0292bad4238ab",
+      "size": 159559841
+    },
+    {
+      "id": "trx-1.11.1",
+      "name": "TRX",
+      "version": "1.11.1",
+      "kind": "native",
+      "url": "https://github.com/LostArtefacts/TRX/releases/download/trx-1.11.1/TRX-1.11.1-Mac.dmg",
+      "sha256": "ed1a26ee1a0ed56516415ba5b817adccea293ac277d7f9a2eea92b21e5cc8be2",
+      "size": 351979847
+    },
+    {
+      "id": "julius-1.8.0",
+      "name": "Julius",
+      "version": "1.8.0",
+      "kind": "native",
+      "url": "https://github.com/bvschaik/julius/releases/download/v1.8.0/julius-1.8.0-mac.dmg",
+      "sha256": "457686314e1c4b819f1d7fd9af0b1edf63f072832d1aa01366bec4f481a88d93",
+      "size": 5340503
+    },
+    {
+      "id": "fs2open-26.0.1",
+      "name": "FreeSpace 2 Open",
+      "version": "26.0.1",
+      "kind": "native",
+      "url": "https://github.com/scp-fs2open/fs2open.github.com/releases/download/release_26_0_1/fs2_open_26_0_1-builds-Mac-arm64.tar.gz",
+      "sha256": "4a5128f6b47736596595c04273fad4b6ab4851f5b96cebe7331e37684e5c5bfe",
+      "size": 98795873
+    },
+    {
+      "id": "opengothic-0.92",
+      "name": "OpenGothic",
+      "version": "0.92",
+      "kind": "native",
+      "url": "https://github.com/Try/OpenGothic/releases/download/v0.92/opengothic_1.0.3756_osx_arm64.zip",
+      "sha256": "ae82d39060e83e5dac4a8ba0f6f3c4616800c0a0ff521ab9357e7b5f94a4404b",
+      "size": 8709703
+    },
+    {
+      "id": "corsixth-0.70.1",
+      "name": "CorsixTH",
+      "version": "0.70.1",
+      "kind": "native",
+      "url": "https://github.com/CorsixTH/CorsixTH/releases/download/v0.70.1/CorsixTH-0.70.1.dmg",
+      "sha256": "90910ded3830cda8204cf2958fb49f174f34c9c279eb5fbf43e17a15fd6ef9c8",
+      "size": 97870694
+    },
+    {
+      "id": "descent3-1.5.0",
+      "name": "Descent 3 (open source)",
+      "version": "1.5.0",
+      "kind": "native",
+      "url": "https://github.com/DescentDevelopers/Descent3/releases/download/v1.5.0/Descent3_Release_macOS-ARM.zip",
+      "sha256": "6a7831cfedb7a1278daa257fad88c2d581016714f911d4b3f44bcb9940c7bf40",
+      "size": 9603290
+    },
+    {
+      "id": "openloco-26.09",
+      "name": "OpenLoco",
+      "version": "26.09",
+      "kind": "native",
+      "url": "https://github.com/OpenLoco/OpenLoco/releases/download/v26.09/OpenLoco-v26.09-macos-arm64.zip",
+      "sha256": "15cd95be662810cae3a16bc8053b2cb3cd2bc680fc29ac486322c3e00fe6da1e",
+      "size": 17557193
+    },
+    {
+      "id": "ja2-stracciatella-0.22.1",
+      "name": "JA2 Stracciatella",
+      "version": "0.22.1",
+      "kind": "native",
+      "url": "https://github.com/ja2-stracciatella/ja2-stracciatella/releases/download/v0.22.1/ja2-stracciatella_0.22.1-git%2B11e9430_macos.dmg",
+      "sha256": "88c233a009a81abf6fff38ca6e4e76b3f5d5027cb9245d82ae61416bfccf7848",
+      "size": 25020060
+    },
+    {
+      "id": "dethrace-0.10.1",
+      "name": "dethrace",
+      "version": "0.10.1",
+      "kind": "native",
+      "url": "https://github.com/dethrace-labs/dethrace/releases/download/v0.10.1/dethrace-v0.10.1-macos-arm64-x64.dmg",
+      "sha256": "c33424ef63acda4af2b4c1a70b09a9d28e5a0bdc43ba828db277d1567e562907",
+      "size": 3127589
     }
   ],
   "games": [
@@ -179,6 +332,1021 @@
       "notes": [
         "Native Apple Silicon build in Mac Steam, free for existing Steam owners; no Wine.",
         "Online skirmish is against other Mac players (no cross-play with PC announced)."
+      ],
+      "tested": []
+    },
+    {
+      "game": "morrowind",
+      "name": "The Elder Scrolls III: Morrowind",
+      "route": "native-port",
+      "port": {
+        "engine": "openmw-0.51.0",
+        "data": {
+          "from": "steam-win",
+          "appid": "22320",
+          "files": [
+            "Data Files"
+          ]
+        },
+        "launch": [
+          "OpenMW.app/Contents/MacOS/openmw"
+        ],
+        "via": "wine-sikarugir-10.0_8",
+        "config": [
+          {
+            "path": "{prefs}/openmw/openmw.cfg",
+            "keep": true,
+            "text": "data=\"{data}/Data Files\"\nfallback-archive=Morrowind.bsa\nfallback-archive=Tribunal.bsa\nfallback-archive=Bloodmoon.bsa\ncontent=Morrowind.esm\ncontent=Tribunal.esm\ncontent=Bloodmoon.esm\n"
+          }
+        ]
+      },
+      "minMacos": "14.8",
+      "notes": [
+        "Uses the Data Files folder of the Steam Windows GOTY edition (Morrowind, Tribunal, Bloodmoon).",
+        "OpenMW is an open-source reimplementation of the engine, not the original exe; Morrowind Code Patch and MGE XE do not apply.",
+        "Settings, mod list and load order live in ~/Library/Preferences/openmw/openmw.cfg; an existing file there is kept as is.",
+        "Saves go to ~/Library/Application Support/openmw/saves.",
+        "Non-English editions may need encoding=win1250 (Polish/Czech) or win1251 (Russian) in openmw.cfg.",
+        "The macOS build needs macOS 14.8 or newer and an Apple Silicon Mac."
+      ],
+      "tested": []
+    },
+    {
+      "game": "rct2",
+      "name": "RollerCoaster Tycoon 2",
+      "route": "native-port",
+      "port": {
+        "engine": "openrct2-0.5.6",
+        "data": {
+          "from": "steam-win",
+          "appid": "285330",
+          "files": [
+            "."
+          ]
+        },
+        "launch": [
+          "OpenRCT2.app/Contents/MacOS/OpenRCT2",
+          "--rct2-data-path={data}"
+        ],
+        "via": "wine-sikarugir-10.0_8"
+      },
+      "minMacos": "11.0",
+      "notes": [
+        "Uses the whole Steam Windows install of RCT2 Triple Thrill Pack (about 300 MB).",
+        "OpenRCT2 is an open-source re-implementation; old RCT2 saves and scenarios load, and multiplayer works with other OpenRCT2 players.",
+        "OpenRCT2 settings and saves live in ~/Library/Application Support/OpenRCT2.",
+        "The OpenRCT2 app is not code signed upstream."
+      ],
+      "tested": []
+    },
+    {
+      "game": "rctclassic",
+      "name": "RollerCoaster Tycoon Classic",
+      "route": "native-port",
+      "port": {
+        "engine": "openrct2-0.5.6",
+        "data": {
+          "from": "none"
+        },
+        "launch": [
+          "OpenRCT2.app/Contents/MacOS/OpenRCT2",
+          "--rct2-data-path={appsupport}/Steam/steamapps/common/RollerCoaster Tycoon Classic"
+        ]
+      },
+      "minMacos": "11.0",
+      "notes": [
+        "RCT Classic has its own Mac version on Steam: install it with Steam for Mac, OpenRCT2 then reads its data in place.",
+        "You can also just play the Mac version from Steam; OpenRCT2 adds native Apple Silicon, big screens and multiplayer.",
+        "Only the default Steam library folder is found; for another library, set the RCT2 path in OpenRCT2 options."
+      ],
+      "tested": []
+    },
+    {
+      "game": "diablo",
+      "name": "Diablo + Hellfire",
+      "route": "native-port",
+      "port": {
+        "engine": "devilutionx-1.5.5",
+        "data": {
+          "from": "folder",
+          "files": [
+            "DIABDAT.MPQ"
+          ],
+          "optional": [
+            "hellfire.mpq",
+            "hfmonk.mpq",
+            "hfmusic.mpq",
+            "hfvoice.mpq"
+          ]
+        },
+        "launch": [
+          "devilutionX.app/Contents/MacOS/devilutionX",
+          "--data-dir",
+          "{data}"
+        ]
+      },
+      "minMacos": "11.0",
+      "notes": [
+        "Pick the folder that holds DIABDAT.MPQ: a Windows install of GOG Diablo + Hellfire, or the original CD.",
+        "The GOG offline installer is a Windows .exe: install it on a PC (or extract it with innoextract) to get the .mpq files.",
+        "Add hellfire.mpq, hfmonk.mpq, hfmusic.mpq and hfvoice.mpq to play Hellfire.",
+        "DevilutionX is a source port of Diablo; saves and diablo.ini live in ~/Library/Application Support/diasurgical/devilution."
+      ],
+      "tested": []
+    },
+    {
+      "game": "fallout1",
+      "name": "Fallout",
+      "route": "native-port",
+      "port": {
+        "engine": "fallout1-ce-1.1.0",
+        "data": {
+          "from": "steam-win",
+          "appid": "38400",
+          "files": [
+            "."
+          ],
+          "into": "{engine}"
+        },
+        "launch": [
+          "Fallout Community Edition.app/Contents/MacOS/fallout-ce"
+        ],
+        "via": "wine-sikarugir-10.0_8"
+      },
+      "minMacos": "11.0",
+      "notes": [
+        "Uses the whole Steam Windows install of Fallout (master.dat, critter.dat, data/).",
+        "Game files and saves (data/SAVEGAME) sit next to the engine app: removing the engine removes the saves, back them up first.",
+        "Fallout CE is a re-implementation of the original engine with quality-of-life fixes; sfall-based mods are only partly supported.",
+        "If music is silent, set music_path1 in fallout.cfg to the folder that holds the .ACM files (data/sound/music/)."
+      ],
+      "tested": []
+    },
+    {
+      "game": "fallout2",
+      "name": "Fallout 2",
+      "route": "native-port",
+      "port": {
+        "engine": "fallout2-ce-1.3.0",
+        "data": {
+          "from": "steam-win",
+          "appid": "38410",
+          "files": [
+            "."
+          ],
+          "into": "{engine}"
+        },
+        "launch": [
+          "Fallout II Community Edition.app/Contents/MacOS/fallout2-ce"
+        ],
+        "via": "wine-sikarugir-10.0_8"
+      },
+      "minMacos": "11.0",
+      "notes": [
+        "Uses the whole Steam Windows install of Fallout 2 (master.dat, critter.dat, patch000.dat, data/).",
+        "Game files and saves (data/SAVEGAME) sit next to the engine app: removing the engine removes the saves, back them up first.",
+        "Window size: f2_res.ini (SCR_WIDTH, SCR_HEIGHT, WINDOWED) in the same folder.",
+        "Fallout 2 CE includes part of sfall; big mods such as Restoration Project or Fallout Et Tu may not run fully."
+      ],
+      "tested": []
+    },
+    {
+      "game": "doom",
+      "name": "DOOM + DOOM II",
+      "route": "native-port",
+      "port": {
+        "engine": "uzdoom-5.0.3",
+        "data": {
+          "from": "steam-win",
+          "appid": "2280",
+          "files": [
+            "rerelease",
+            "base"
+          ]
+        },
+        "launch": [
+          "UZDoom.app/Contents/MacOS/uzdoom"
+        ],
+        "env": {
+          "DOOMWADPATH": "{data}/rerelease:{data}/base:{data}/base/doom2:{data}/base/tnt:{data}/base/plutonia"
+        },
+        "via": "wine-sikarugir-10.0_8"
+      },
+      "minMacos": "12.0",
+      "notes": [
+        "Uses the Steam Windows DOOM + DOOM II (2024 release): UZDoom lists DOOM, DOOM II, TNT and Plutonia (KEX and original DOS versions) at start.",
+        "Final DOOM (2290) and DOOM II (2300) are no longer sold separately; their content is in DOOM + DOOM II.",
+        "UZDoom is a GZDoom-based source port: the KEX online modes and in-game mod browser are not available; classic WAD/PK3 mods work.",
+        "If you edited UZDoom's IWAD search paths in its .ini yourself, keep $DOOMWADPATH in them."
+      ],
+      "tested": []
+    },
+    {
+      "game": "heretichexen",
+      "name": "Heretic + Hexen",
+      "route": "native-port",
+      "port": {
+        "engine": "uzdoom-5.0.3",
+        "data": {
+          "from": "steam-win",
+          "appid": "3286930",
+          "files": [
+            "dos/base"
+          ]
+        },
+        "launch": [
+          "UZDoom.app/Contents/MacOS/uzdoom"
+        ],
+        "env": {
+          "DOOMWADPATH": "{data}/dos/base/heretic:{data}/dos/base/hexen:{data}/dos/base/hexendk"
+        },
+        "via": "wine-sikarugir-10.0_8"
+      },
+      "minMacos": "12.0",
+      "notes": [
+        "Uses the original DOS game data shipped inside the Steam Windows Heretic + Hexen (2025); pick Heretic, Hexen or Deathkings at start.",
+        "The new Nightdive episodes (KEX content) are not playable in UZDoom.",
+        "Owners of the old Steam Heretic (2390) or Hexen (2360) only: these are not covered by this recipe yet."
+      ],
+      "tested": []
+    },
+    {
+      "game": "duke3d",
+      "name": "Duke Nukem 3D: 20th Anniversary World Tour",
+      "route": "native-port",
+      "port": {
+        "engine": "raze-1.11.0",
+        "data": {
+          "from": "steam-win",
+          "appid": "434050",
+          "files": [
+            "."
+          ]
+        },
+        "launch": [
+          "Raze.app/Contents/MacOS/raze",
+          "-iwad",
+          "{data}/DUKE3D.GRP"
+        ],
+        "via": "wine-sikarugir-10.0_8"
+      },
+      "minMacos": "11.0",
+      "notes": [
+        "Uses the Steam Windows 20th Anniversary World Tour install, including Episode 5.",
+        "Raze plays the classic game; the 20th Anniversary extras (developer commentary, its renderer modes) are not available."
+      ],
+      "tested": []
+    },
+    {
+      "game": "blood",
+      "name": "Blood",
+      "route": "native-port",
+      "port": {
+        "engine": "raze-1.11.0",
+        "data": {
+          "from": "steam-win",
+          "appid": "1010750",
+          "files": [
+            "."
+          ]
+        },
+        "launch": [
+          "Raze.app/Contents/MacOS/raze",
+          "-iwad",
+          "{data}/BLOOD.RFF"
+        ],
+        "via": "wine-sikarugir-10.0_8"
+      },
+      "minMacos": "11.0",
+      "notes": [
+        "For owners of Blood: Fresh Supply on Steam (no longer sold, still downloadable). Cryptic Passage is in addons/ and found by Raze.",
+        "Blood: Refreshed Supply (2025) is not supported by this recipe: Raze 1.11.0 predates it.",
+        "Raze is a source port of the Build engine games; Fresh Supply's own online and enhanced options are not available."
+      ],
+      "tested": []
+    },
+    {
+      "game": "shadowwarrior",
+      "name": "Shadow Warrior Classic",
+      "route": "native-port",
+      "port": {
+        "engine": "raze-1.11.0",
+        "data": {
+          "from": "none"
+        },
+        "launch": [
+          "Raze.app/Contents/MacOS/raze"
+        ]
+      },
+      "minMacos": "11.0",
+      "notes": [
+        "Shadow Warrior Classic (1997) is free on Steam and has a Mac version: install it with Steam for Mac, Raze finds it.",
+        "Pick Shadow Warrior in Raze's game list on start (it lists every Build game it found).",
+        "Wanton Destruction and Twin Dragon come with Shadow Warrior Classic Redux (225160), whose Mac files Raze does not look for."
+      ],
+      "tested": []
+    },
+    {
+      "game": "powerslave",
+      "name": "PowerSlave",
+      "route": "native-port",
+      "port": {
+        "engine": "raze-1.11.0",
+        "data": {
+          "from": "none"
+        },
+        "launch": [
+          "Raze.app/Contents/MacOS/raze"
+        ]
+      },
+      "minMacos": "11.0",
+      "notes": [
+        "PowerSlave (DOS Classic Edition) has a Mac version on Steam: install it with Steam for Mac, Raze finds it.",
+        "Pick PowerSlave in Raze's game list on start.",
+        "PowerSlave Exhumed (the 2022 Nightdive remaster) is not covered."
+      ],
+      "tested": []
+    },
+    {
+      "game": "redalert",
+      "name": "Command & Conquer: Red Alert (OpenRA)",
+      "route": "native-port",
+      "port": {
+        "engine": "openra-20250330",
+        "data": {
+          "from": "none"
+        },
+        "launch": [
+          "OpenRA - Red Alert.app/Contents/MacOS/Launcher"
+        ]
+      },
+      "minMacos": "14.0",
+      "notes": [
+        "OpenRA is a free open-source reimplementation (GPL-3.0); it does not run the original exe and plays differently (modern RTS controls, balance).",
+        "No purchase needed: on first start OpenRA's content installer downloads the freeware Red Alert files EA released in 2008 (about 100 MB) into ~/Library/Application Support/OpenRA/Content/ra.",
+        "Music and the full campaign videos come from an original disc or the C&C Remastered Collection; the freeware package covers the playable game.",
+        "Online multiplayer uses OpenRA's own server browser, cross-platform with other OpenRA players."
+      ],
+      "tested": []
+    },
+    {
+      "game": "tiberiandawn",
+      "name": "Command & Conquer: Tiberian Dawn (OpenRA)",
+      "route": "native-port",
+      "port": {
+        "engine": "openra-20250330",
+        "data": {
+          "from": "none"
+        },
+        "launch": [
+          "OpenRA - Tiberian Dawn.app/Contents/MacOS/Launcher"
+        ]
+      },
+      "minMacos": "14.0",
+      "notes": [
+        "OpenRA is a free open-source reimplementation (GPL-3.0) of the 1995 Command & Conquer, not the original exe.",
+        "No purchase needed: the content installer downloads the freeware C&C files (released by EA in 2007) into ~/Library/Application Support/OpenRA/Content/cnc on first start.",
+        "Online multiplayer uses OpenRA's own server browser, cross-platform with other OpenRA players."
+      ],
+      "tested": []
+    },
+    {
+      "game": "tombraider2",
+      "name": "Tomb Raider II (TRX)",
+      "route": "native-port",
+      "port": {
+        "engine": "trx-1.11.1",
+        "data": {
+          "from": "steam-win",
+          "appid": "225300",
+          "files": [
+            "data",
+            "fmv"
+          ],
+          "into": "{engine}/TRX.app/Contents/Resources"
+        },
+        "launch": [
+          "TRX.app/Contents/MacOS/TRX",
+          "--mod",
+          "tr2"
+        ],
+        "via": "wine-sikarugir-10.0_8"
+      },
+      "minMacos": "14.0",
+      "notes": [
+        "TRX is an open-source engine for the original Tomb Raider games (GPL-3.0), with widescreen, modern controls and many fixes.",
+        "Needs the Steam Windows release (app 225300): its data and fmv folders are copied into the engine.",
+        "Golden Mask (expansion) is bundled free by TRX: pick it in the game's passport.",
+        "The Steam release has no CD music; TRX's Windows installer offers a separate music download that this recipe does not fetch, so expect silence where music would play.",
+        "Uses TRX's older flat data layout (top-level data/ and fmv/), which TRX still reads but no longer documents."
+      ],
+      "tested": []
+    },
+    {
+      "game": "tombraider1",
+      "name": "Tomb Raider (TRX)",
+      "route": "native-port",
+      "port": {
+        "engine": "trx-1.11.1",
+        "data": {
+          "from": "folder",
+          "files": [
+            "DATA",
+            "FMV"
+          ],
+          "optional": [
+            "MUSIC"
+          ],
+          "into": "{engine}/TRX.app/Contents/Resources"
+        },
+        "launch": [
+          "TRX.app/Contents/MacOS/TRX",
+          "--mod",
+          "tr1"
+        ]
+      },
+      "minMacos": "14.0",
+      "notes": [
+        "Pick a folder that holds the game's DATA and FMV folders (and MUSIC if you have the track files).",
+        "Steam (app 224960) and GOG ship Tomb Raider I as a CD image (GAME.DAT / GAME.GOG): the files must be extracted from that image first; SIGF cannot do it yet.",
+        "Unfinished Business is bundled free by TRX: pick it in the game's passport.",
+        "Uses TRX's older flat data layout (top-level data/ and fmv/), which TRX still reads but no longer documents."
+      ],
+      "tested": []
+    },
+    {
+      "game": "caesar3",
+      "name": "Caesar III (Julius)",
+      "route": "native-port",
+      "port": {
+        "engine": "julius-1.8.0",
+        "data": {
+          "from": "steam-win",
+          "appid": "517790",
+          "files": [
+            "."
+          ]
+        },
+        "launch": [
+          "julius.app/Contents/MacOS/julius",
+          "{data}"
+        ],
+        "via": "wine-sikarugir-10.0_8"
+      },
+      "minMacos": "14.0",
+      "notes": [
+        "Julius is an open-source re-creation of Caesar III (AGPL-3.0) with the same game logic; saves are compatible with the original.",
+        "Needs the Steam Windows release (app 517790): the whole game folder is copied, and Julius saves into that copy.",
+        "Julius needs the patched game (v1.0.1); if it says the files are older, apply the official patch to the Windows install first.",
+        "Adds widescreen and windowed play; Julius is the vanilla-rules engine (Augustus would change gameplay)."
+      ],
+      "tested": []
+    },
+    {
+      "game": "freespace2",
+      "name": "FreeSpace 2 (FSO)",
+      "route": "native-port",
+      "port": {
+        "engine": "fs2open-26.0.1",
+        "data": {
+          "from": "steam-win",
+          "appid": "273620",
+          "files": [
+            "root_fs2.vp",
+            "smarty_fs2.vp",
+            "sparky_fs2.vp",
+            "sparky_hi_fs2.vp",
+            "stu_fs2.vp",
+            "tango1_fs2.vp",
+            "tango2_fs2.vp",
+            "tango3_fs2.vp",
+            "warble_fs2.vp"
+          ],
+          "optional": [
+            "data",
+            "data2",
+            "data3"
+          ],
+          "into": "{engine}/fs2_open_26_0_1_arm64.app/Contents/MacOS"
+        },
+        "launch": [
+          "fs2_open_26_0_1_arm64.app/Contents/MacOS/fs2_open_26_0_1_arm64"
+        ],
+        "via": "wine-sikarugir-10.0_8"
+      },
+      "minMacos": "14.0",
+      "notes": [
+        "FreeSpace 2 Open is the community-maintained engine built from Volition's source release (non-commercial licence).",
+        "Needs the Steam Windows release (app 273620): the retail .vp archives (and the data folders with movies, when present) are copied next to the engine, which reads them from its working folder.",
+        "Plays the retail game as shipped; the MediaVPs graphics upgrade and Knossos mod launcher are not part of this recipe.",
+        "Pilots and settings are kept in ~/Library/Application Support/HardLightProductions/FreeSpaceOpen."
+      ],
+      "tested": []
+    },
+    {
+      "game": "gothic2",
+      "name": "Gothic II: Gold Edition (OpenGothic)",
+      "route": "native-port",
+      "port": {
+        "engine": "opengothic-0.92",
+        "data": {
+          "from": "steam-win",
+          "appid": "39510",
+          "files": [
+            "Data",
+            "_work"
+          ],
+          "optional": [
+            "System"
+          ],
+          "into": "{appsupport}/OpenGothic"
+        },
+        "launch": [
+          "Gothic2Notr"
+        ],
+        "via": "wine-sikarugir-10.0_8"
+      },
+      "minMacos": "15.0",
+      "notes": [
+        "OpenGothic is an open-source engine (MIT) for Gothic II: Night of the Raven, rendering through Metal.",
+        "Needs the Steam Windows release (app 39510, Gold Edition = Gothic II + Night of the Raven): Data and _work are copied to ~/Library/Application Support/OpenGothic, where OpenGothic finds them by itself; saves go there too.",
+        "Modern renderer: original graphics settings do not apply; ray tracing is off on integrated GPUs.",
+        "Mods that need the original exe or Union/Ninja plugins do not work; script-only mods can be started with -game:<mod>.ini."
+      ],
+      "tested": []
+    },
+    {
+      "game": "gothic",
+      "name": "Gothic (OpenGothic)",
+      "route": "native-port",
+      "port": {
+        "engine": "opengothic-0.92",
+        "data": {
+          "from": "steam-win",
+          "appid": "65540",
+          "files": [
+            "Data",
+            "_work"
+          ],
+          "optional": [
+            "System"
+          ]
+        },
+        "launch": [
+          "Gothic2Notr",
+          "-g",
+          "{data}",
+          "-g1"
+        ],
+        "via": "wine-sikarugir-10.0_8"
+      },
+      "minMacos": "15.0",
+      "notes": [
+        "OpenGothic (MIT) mainly targets Gothic II; Gothic 1 runs with -g1 but is less polished: expect missing details and occasional script bugs.",
+        "Needs the Steam Windows release (app 65540, \"Gothic 1 Classic\"), not the Gothic 1 Remake.",
+        "Saves are written next to the OpenGothic engine (removing the engine removes them)."
+      ],
+      "tested": []
+    },
+    {
+      "game": "themehospital",
+      "name": "Theme Hospital (CorsixTH)",
+      "route": "native-port",
+      "port": {
+        "engine": "corsixth-0.70.1",
+        "data": {
+          "from": "folder",
+          "files": [
+            "Data",
+            "Levels",
+            "QData"
+          ],
+          "optional": [
+            "Sound",
+            "Anims",
+            "Intro",
+            "DataM",
+            "QDataM"
+          ]
+        },
+        "launch": [
+          "CorsixTH.app/Contents/MacOS/CorsixTH",
+          "--config-file={data}/config.txt"
+        ],
+        "config": [
+          {
+            "path": "{data}/config.txt",
+            "text": "theme_hospital_install = [[{data}]]\n",
+            "keep": true
+          }
+        ]
+      },
+      "minMacos": "14.0",
+      "notes": [
+        "CorsixTH is an open-source re-creation of Theme Hospital (MIT) with widescreen, higher resolutions and fixes.",
+        "Theme Hospital is not on Steam: pick the installed folder of your copy (GOG or the original CD install) that holds Data, Levels and QData.",
+        "Sound and Anims are optional: without them the game is silent and skips movies.",
+        "Settings changed in game are kept (config.txt next to the copied data)."
+      ],
+      "tested": []
+    },
+    {
+      "game": "descent3",
+      "name": "Descent 3 (open source)",
+      "route": "native-port",
+      "port": {
+        "engine": "descent3-1.5.0",
+        "data": {
+          "from": "steam-win",
+          "appid": "273590",
+          "files": [
+            "d3.hog",
+            "missions"
+          ],
+          "optional": [
+            "extra.hog",
+            "extra1.hog",
+            "extra13.hog",
+            "merc.hog",
+            "movies"
+          ],
+          "into": "{engine}/Descent3.app/Contents/MacOS"
+        },
+        "launch": [
+          "Descent3.app/Contents/MacOS/Descent3"
+        ],
+        "via": "wine-sikarugir-10.0_8"
+      },
+      "minMacos": "14.0",
+      "notes": [
+        "Descent 3 open source (GPL-3.0, released by the original developers) running the Steam Windows data (app 273590).",
+        "Steam also lists an old Mac build of Descent 3; this recipe uses the Windows files on purpose: the project notes that movies only work with them.",
+        "Data must be game version 1.4 (the Steam release is).",
+        "Pilots and saves are written next to the engine (removing the engine removes them)."
+      ],
+      "tested": []
+    },
+    {
+      "game": "locomotion",
+      "name": "Chris Sawyer's Locomotion (OpenLoco)",
+      "route": "native-port",
+      "port": {
+        "engine": "openloco-26.09",
+        "data": {
+          "from": "steam-win",
+          "appid": "356430",
+          "files": [
+            "Data",
+            "ObjData",
+            "Scenarios"
+          ],
+          "optional": [
+            "plugin.dat",
+            "plugin2.dat"
+          ]
+        },
+        "launch": [
+          "OpenLoco.app/Contents/MacOS/OpenLoco",
+          "--locomotion_path",
+          "{data}"
+        ],
+        "via": "wine-sikarugir-10.0_8"
+      },
+      "minMacos": "15.0",
+      "notes": [
+        "OpenLoco is an open-source re-implementation of Locomotion (MIT), with bug fixes and higher resolutions.",
+        "Needs the Steam Windows release (app 356430): Data, ObjData and Scenarios are copied.",
+        "Saves, settings and screenshots are in ~/Library/Application Support/OpenLoco.",
+        "OpenLoco multiplayer is experimental."
+      ],
+      "tested": []
+    },
+    {
+      "game": "ja2",
+      "name": "Jagged Alliance 2 (Stracciatella)",
+      "route": "native-port",
+      "port": {
+        "engine": "ja2-stracciatella-0.22.1",
+        "data": {
+          "from": "steam-win",
+          "appid": "1620",
+          "files": [
+            "Data"
+          ]
+        },
+        "launch": [
+          "JA2 Stracciatella.app/Contents/Resources/ja2",
+          "-gamedir",
+          "{data}"
+        ],
+        "via": "wine-sikarugir-10.0_8"
+      },
+      "minMacos": "15.0",
+      "notes": [
+        "JA2 Stracciatella is an open-source port of the released JA2 source (non-commercial licence), with higher resolutions and fixes.",
+        "Needs the Steam Windows release of Jagged Alliance 2 Gold (app 1620): its Data folder is copied.",
+        "Jagged Alliance 2 Classic (app 545210) already has a Mac build on Steam; its data should work too but this recipe uses Gold.",
+        "English data assumed; other languages need -resversion (GERMAN, FRENCH, ...).",
+        "Unfinished Business and Wildfire are not covered by this recipe."
+      ],
+      "tested": []
+    },
+    {
+      "game": "carmageddon",
+      "name": "Carmageddon (dethrace)",
+      "route": "native-port",
+      "port": {
+        "engine": "dethrace-0.10.1",
+        "data": {
+          "from": "steam-win",
+          "appid": "282010",
+          "files": [
+            "CARMA"
+          ]
+        },
+        "launch": [
+          "Deth Race.app/Contents/MacOS/Deth Race"
+        ],
+        "env": {
+          "DETHRACE_ROOT_DIR": "{data}/CARMA"
+        },
+        "via": "wine-sikarugir-10.0_8"
+      },
+      "minMacos": "15.0",
+      "notes": [
+        "dethrace is a reverse-engineered open-source Carmageddon engine (non-commercial use only).",
+        "Needs the Steam Windows release of the Carmageddon Max Pack (app 282010): its CARMA folder is copied.",
+        "Plays the original Carmageddon; the Splat Pack expansion is not wired up by this recipe.",
+        "A dethrace.ini in ~/Library/Application Support/dethrace overrides the data folder and settings (hires, windowed, 3dfx mode)."
+      ],
+      "tested": []
+    },
+    {
+      "game": "falloutnv",
+      "name": "Fallout: New Vegas",
+      "route": "wine",
+      "wine": {
+        "engine": "wine-sikarugir-10.0_8",
+        "renderer": "",
+        "store": "steam-win",
+        "appid": "22380",
+        "exe": "FalloutNV.exe",
+        "env": {
+          "WINEMSYNC": "1"
+        },
+        "dllOverrides": "",
+        "args": [],
+        "verbs": [
+          "vcrun2022"
+        ],
+        "online": "none"
+      },
+      "minMacos": "14.0",
+      "notes": [
+        "Steam Windows build (app 22380). D3D9 through Wine's own renderer (OpenGL), not DXMT.",
+        "Steam Play opens the New Vegas launcher first: pick a modest preset once (the auto-detect can pick settings the Mac cannot hold).",
+        "Older Macs run it slowly (about 15 fps reported on an M1 Mac mini under CrossOver 21); newer Macs and CrossOver 25 report it running well.",
+        "If music or radio is silent, the MP3 decoder (GStreamer) is the usual suspect: say so in the report with the log.",
+        "The 4GB Patcher and NVSE install into the game folder as on Windows."
+      ],
+      "tested": []
+    },
+    {
+      "game": "fallout3",
+      "name": "Fallout 3: Game of the Year Edition",
+      "route": "wine",
+      "wine": {
+        "engine": "wine-sikarugir-10.0_8",
+        "renderer": "",
+        "store": "steam-win",
+        "appid": "22370",
+        "exe": "Fallout3.exe",
+        "env": {
+          "WINEMSYNC": "1"
+        },
+        "dllOverrides": "",
+        "args": [],
+        "online": "none"
+      },
+      "minMacos": "14.0",
+      "notes": [
+        "Steam Windows build (app 22370, GFWL already removed by Bethesda). D3D9 through Wine's own renderer, not DXMT.",
+        "CodeWeavers reports it may fail to open or run at 10-15 fps on Apple Silicon. Highest risk of this batch.",
+        "Crashes or stutter on many-core CPUs: in Documents/My Games/Fallout3/FALLOUT.ini set bUseThreadedAI=1 and add iNumHWThreads=2 (the usual Windows fix, also recommended for Wine).",
+        "Steam Play opens the Fallout 3 launcher first: choose a modest preset once."
+      ],
+      "tested": []
+    },
+    {
+      "game": "oblivion",
+      "name": "The Elder Scrolls IV: Oblivion Game of the Year Edition",
+      "route": "wine",
+      "wine": {
+        "engine": "wine-sikarugir-10.0_8",
+        "renderer": "",
+        "store": "steam-win",
+        "appid": "22330",
+        "exe": "Oblivion.exe",
+        "env": {
+          "WINEMSYNC": "1"
+        },
+        "dllOverrides": "",
+        "args": [],
+        "online": "none"
+      },
+      "minMacos": "14.0",
+      "notes": [
+        "The 2006 game on Steam (app 22330), not Oblivion Remastered. D3D9 through Wine's own renderer.",
+        "Steam Play opens the Oblivion launcher first: choose a modest preset once.",
+        "Missing music or voices is the most reported problem under CrossOver (it ships an audio override for this game): send the log if it happens.",
+        "Mods go into Data as on Windows; OBSE goes next to Oblivion.exe."
+      ],
+      "tested": []
+    },
+    {
+      "game": "fallout4",
+      "name": "Fallout 4",
+      "route": "wine",
+      "wine": {
+        "engine": "wine-sikarugir-10.0_8",
+        "renderer": "dxmt-0.80",
+        "store": "steam-win",
+        "appid": "377160",
+        "exe": "Fallout4.exe",
+        "env": {
+          "WINEMSYNC": "1"
+        },
+        "dllOverrides": "dxgi,d3d11,d3d10core,winemetal=b;nvapi64,nvngx=",
+        "args": [],
+        "verbs": [
+          "vcrun2022"
+        ],
+        "online": "none"
+      },
+      "minMacos": "14.0",
+      "notes": [
+        "Steam Windows build (app 377160). CrossOver rates it Runs Well on macOS with DXMT.",
+        "An older DXMT showed VATS hit chances at 0% and crashed loading a quicksave; reported fixed in newer DXMT. If VATS reads 0%, say so in the report.",
+        "Steam Play opens the Fallout 4 launcher first: choose a modest preset once (Godrays and shadows cost the most on a Mac).",
+        "About 35 GB free disk (more with the high-resolution texture pack, which is not worth it on a Mac)."
+      ],
+      "tested": []
+    },
+    {
+      "game": "kenshi",
+      "name": "Kenshi",
+      "route": "wine",
+      "wine": {
+        "engine": "wine-sikarugir-10.0_8",
+        "renderer": "dxmt-0.80",
+        "store": "steam-win",
+        "appid": "233860",
+        "exe": "kenshi_x64.exe",
+        "env": {
+          "WINEMSYNC": "1"
+        },
+        "dllOverrides": "dxgi,d3d11,d3d10core,winemetal=b;nvapi64,nvngx=",
+        "args": [],
+        "online": "none"
+      },
+      "minMacos": "14.0",
+      "notes": [
+        "Steam Windows build (app 233860), 64-bit. Untested on Mac with DXMT: no public report either way.",
+        "Kenshi's own launcher opens first: keep the DirectX 11 renderer (not OpenGL), and enable mods there (load order).",
+        "Large towns are CPU-heavy on any machine; expect slowdowns there."
+      ],
+      "tested": []
+    },
+    {
+      "game": "bannerlord",
+      "name": "Mount & Blade II: Bannerlord",
+      "route": "wine",
+      "wine": {
+        "engine": "wine-sikarugir-10.0_8",
+        "renderer": "dxmt-0.80",
+        "store": "steam-win",
+        "appid": "261550",
+        "exe": "bin/Win64_Shipping_Client/Bannerlord.Native.exe",
+        "env": {
+          "WINEMSYNC": "1"
+        },
+        "dllOverrides": "dxgi,d3d11,d3d10core,winemetal=b;nvapi64,nvngx=",
+        "args": [],
+        "verbs": [
+          "mono",
+          "vcrun2022"
+        ],
+        "online": "offline-only"
+      },
+      "minMacos": "14.0",
+      "notes": [
+        "Single player only: multiplayer needs Easy Anti-Cheat, which does not work under Wine.",
+        "CrossOver rates it Limited Functionality: the TaleWorlds launcher (what Steam Play opens) often fails under Wine. Players who got in started the game exe directly.",
+        "Reported with DXMT: ground disappearing and stretched objects in some scenes.",
+        "The game runs on .NET Framework; Wine Mono stands in for it. If it stops at startup, send the log.",
+        "Mods go into Modules as on Windows and are enabled in the launcher."
+      ],
+      "tested": []
+    },
+    {
+      "game": "sekiro",
+      "name": "Sekiro: Shadows Die Twice",
+      "route": "wine",
+      "wine": {
+        "engine": "wine-sikarugir-10.0_8",
+        "renderer": "dxmt-0.80",
+        "store": "steam-win",
+        "appid": "814380",
+        "exe": "sekiro.exe",
+        "env": {
+          "WINEMSYNC": "1"
+        },
+        "dllOverrides": "dxgi,d3d11,d3d10core,winemetal=b;nvapi64,nvngx=",
+        "args": [],
+        "online": "none"
+      },
+      "minMacos": "14.0",
+      "notes": [
+        "Reported playable on an M5 MacBook Air with this same Wine 10 + DXMT setup.",
+        "Known DXMT 0.80 bug: freezes of many seconds in some scenes (fixed in the next DXMT). Wait it out; it is not a crash.",
+        "Mods use Sekiro Mod Engine (a dinput8.dll in the game folder); it may need dinput8 set to native, which this recipe does not do yet."
+      ],
+      "tested": []
+    },
+    {
+      "game": "darksoulsremastered",
+      "name": "Dark Souls: Remastered",
+      "route": "wine",
+      "wine": {
+        "engine": "wine-sikarugir-10.0_8",
+        "renderer": "dxmt-0.80",
+        "store": "steam-win",
+        "appid": "570940",
+        "exe": "DarkSoulsRemastered.exe",
+        "env": {
+          "WINEMSYNC": "1"
+        },
+        "dllOverrides": "dxgi,d3d11,d3d10core,winemetal=b;nvapi64,nvngx=",
+        "args": [],
+        "online": "offline-only"
+      },
+      "minMacos": "14.0",
+      "notes": [
+        "Play offline (in-game Network settings: launch in offline mode). Online play under Wine is untested and modified games risk a flag.",
+        "Ran at about 60 fps on an M1 under CrossOver (DXVK); not yet confirmed with DXMT.",
+        "Texture flicker in Blighttown was reported under CrossOver 22."
+      ],
+      "tested": []
+    },
+    {
+      "game": "darksouls3",
+      "name": "Dark Souls III",
+      "route": "wine",
+      "wine": {
+        "engine": "wine-sikarugir-10.0_8",
+        "renderer": "dxmt-0.80",
+        "store": "steam-win",
+        "appid": "374320",
+        "exe": "Game/DarkSoulsIII.exe",
+        "env": {
+          "WINEMSYNC": "1"
+        },
+        "dllOverrides": "dxgi,d3d11,d3d10core,winemetal=b;nvapi64,nvngx=",
+        "args": [],
+        "online": "offline-only"
+      },
+      "minMacos": "14.0",
+      "notes": [
+        "Play offline (in-game Network settings: launch in offline mode). Online play under Wine is untested.",
+        "Reported around 30 fps at 900p medium on an M1 under CrossOver; brief freezes on fast camera moves.",
+        "The in-game graphics menu can lag badly: settings can also be edited in %APPDATA%/DarkSoulsIII/GraphicsConfig.xml inside the prefix.",
+        "Start it with Play (through Steam): the exe started on its own restarts through Steam anyway."
+      ],
+      "tested": []
+    },
+    {
+      "game": "mhworld",
+      "name": "Monster Hunter: World",
+      "route": "wine",
+      "wine": {
+        "engine": "wine-sikarugir-10.0_8",
+        "renderer": "dxmt-0.80",
+        "store": "steam-win",
+        "appid": "582010",
+        "exe": "MonsterHunterWorld.exe",
+        "env": {
+          "WINEMSYNC": "1"
+        },
+        "dllOverrides": "dxgi,d3d11,d3d10core,winemetal=b;nvapi64,nvngx=",
+        "args": [],
+        "online": "ok"
+      },
+      "minMacos": "14.0",
+      "notes": [
+        "DirectX 11 only: in graphics_option.ini (game folder) set DirectX12Enable=Off before the first launch, or in Options > Display turn DirectX 12 off.",
+        "Older CrossOver reports: black screen, then a freeze at the main menu. One 2024 report ran it in DX11 mode on an M1 Pro. Treat it as experimental.",
+        "Co-op goes through Capcom's servers and Steam; it is untested here.",
+        "About 50 GB free disk with Iceborne."
       ],
       "tested": []
     }

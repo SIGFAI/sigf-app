@@ -23,7 +23,7 @@ const shortName = (g: MacGame) => GAME[g.game]?.short ?? g.name;
 /** The engine names, joined: "Wine 11.18 + DXMT 0.72". */
 function engineNames(g: MacGame): string {
   const { list } = macEngines(g);
-  if (!list.length) return [g.wine?.engine, g.wine?.renderer, g.port?.engine].filter(Boolean).join(' + ');
+  if (!list.length) return [g.wine?.engine, g.wine?.renderer, g.port?.engine, g.port?.via].filter(Boolean).join(' + ');
   return list.map((e) => [e.name ?? e.id, e.version].filter(Boolean).join(' ')).join(' + ');
 }
 const rendererName = (g: MacGame) => macEngines(g).list.find((e) => e.kind === 'renderer')?.name ?? g.wine?.renderer ?? '';
@@ -318,15 +318,17 @@ function StepRow({ id, n, g, st, ctx, active, passed }: { id: MacStepId; n: numb
 
 function RemovePanel({ g, st, onClose }: { g: MacGame; st: MacState; onClose: () => void }) {
   const disk = st.status?.disk ?? { engineBytes: 0, prefixBytes: 0 };
-  const [what, setWhat] = useState<RemoveWhat>('prefix');
-  const removing = st.run?.kind === 'remove';
   const port = g.route === 'native-port';
+  // A port that needs no game files has nothing but its engine to remove.
+  const noData = port && g.port?.data.from === 'none';
+  const [what, setWhat] = useState<RemoveWhat>(noData ? 'engine' : 'prefix');
+  const removing = st.run?.kind === 'remove';
   const noWin = port && g.port?.data.from !== 'steam-win';
   const opts: { id: RemoveWhat; label: Key; sub: string; size: number }[] = [
-    { id: 'prefix', label: noWin ? 'mac.rmData' : port ? 'mac.rmPrefixPort' : 'mac.rmPrefix', sub: t(noWin ? 'mac.rmDataSub' : port ? 'mac.rmPrefixPortSub' : 'mac.rmPrefixSub', { game: shortName(g) }), size: disk.prefixBytes },
-    { id: 'engine', label: 'mac.rmEngine', sub: t('mac.rmEngineSub', { engine: engineNames(g) }), size: disk.engineBytes },
-    { id: 'all', label: 'mac.rmAll', sub: t('mac.rmAllSub'), size: disk.prefixBytes + disk.engineBytes },
-  ];
+    { id: 'prefix' as const, label: (noWin ? 'mac.rmData' : port ? 'mac.rmPrefixPort' : 'mac.rmPrefix') as Key, sub: t(noWin ? 'mac.rmDataSub' : port ? 'mac.rmPrefixPortSub' : 'mac.rmPrefixSub', { game: shortName(g) }), size: disk.prefixBytes },
+    { id: 'engine' as const, label: 'mac.rmEngine' as Key, sub: t('mac.rmEngineSub', { engine: engineNames(g) }), size: disk.engineBytes },
+    { id: 'all' as const, label: 'mac.rmAll' as Key, sub: t('mac.rmAllSub'), size: disk.prefixBytes + disk.engineBytes },
+  ].filter((o) => !(noData && o.id === 'prefix'));
   const size = opts.find((o) => o.id === what)!.size;
   const box = useRef<HTMLDivElement>(null);
   useEffect(() => box.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), []);
@@ -420,7 +422,7 @@ export function MacSheet({ ctx, g, onClose }: { ctx: Ctx; g: MacGame; onClose: (
                         {used > 0 ? (
                           <>
                             <b>{t('mac.diskUsed', { size: bytes(used) })}</b>
-                            <small>{t(g.route === 'native-port' && g.port?.data.from !== 'steam-win' ? 'mac.diskSplitData' : 'mac.diskSplit', { engine: bytes(disk!.engineBytes), prefix: bytes(disk!.prefixBytes) })}</small>
+                            {g.port?.data.from !== 'none' && <small>{t(g.route === 'native-port' && g.port?.data.from !== 'steam-win' ? 'mac.diskSplitData' : 'mac.diskSplit', { engine: bytes(disk!.engineBytes), prefix: bytes(disk!.prefixBytes) })}</small>}
                           </>
                         ) : (
                           <small>{t('mac.diskNone')}</small>
@@ -492,7 +494,10 @@ export function MacHeroActions({ ctx, g, onOpen }: { ctx: Ctx; g: MacGame; onOpe
 export function MacStrip({ g, onOpen }: { g: MacGame; onOpen: () => void }) {
   const st = useMacState(g.game);
   if (!st.status || macReady(g, st.status) || st.error?.kind === 'unsupported') return null;
-  const body = g.route === 'wine' ? t('mac.stripWine', { game: shortName(g) }) : g.route === 'native-port' ? t('mac.stripPort', { game: shortName(g), engine: portName(g) }) : t('mac.stripNative', { game: shortName(g) });
+  const body =
+    g.route === 'wine' ? t('mac.stripWine', { game: shortName(g) })
+    : g.route === 'native-port' ? t(g.port?.data.from === 'none' ? 'mac.stripPortNoData' : 'mac.stripPort', { game: shortName(g), engine: portName(g) })
+    : t('mac.stripNative', { game: shortName(g) });
   return (
     <div className="trust mac-strip">
       <Icon name="laptop" size={16} />

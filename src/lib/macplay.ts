@@ -11,8 +11,38 @@ import { GAME } from '../data/games';
 
 // ---------- Contract types (MAC-PLAY.md sections 1 and 2) ----------
 
-export type MacEngine = { id: string; url: string; sha256: string; size: number; kind: 'wine' | 'renderer' | 'native'; name?: string; version?: string };
+export type MacEngine = {
+  id: string;
+  url: string;
+  sha256: string;
+  size: number;
+  kind: 'wine' | 'renderer' | 'native' | 'runtime';
+  name?: string;
+  version?: string;
+  /** A wine engine's runtime (an engine of kind runtime: libraries it loads). */
+  needs?: string;
+};
 export type MacRoute = 'wine' | 'native-port' | 'native';
+
+/** A path a port writes: a root, then a plain relative path. `{engine}` alone only as `data.into`. */
+export type MacRootedPath = `{appsupport}/${string}` | `{prefs}/${string}` | `{engine}` | `{engine}/${string}` | `{data}/${string}`;
+
+export type MacPortData = {
+  /** `none`: the engine needs no player data (it fetches free content itself); nothing else is set then. */
+  from: 'steam-win' | 'gog-installer' | 'folder' | 'none';
+  appid?: string;
+  /** Paths in the game folder, matched ignoring case; `['.']` = all of it. */
+  files?: string[];
+  /** Copied too when present. */
+  optional?: string[];
+  /** Under ~/Library/Application Support: the data is ready (the engine imported it itself). */
+  markers?: string[];
+  /** Where the data goes (default: the app's ports folder); `{data}` expands to it. */
+  into?: MacRootedPath;
+};
+
+/** A file the core writes after the data copy and before each launch (`keep`: only when missing). */
+export type MacPortConfig = { path: MacRootedPath; text: string; keep?: boolean };
 export type MacTest = { by: string; on: string; result: 'works' | 'menu' | 'broken' };
 
 export type MacGame = {
@@ -33,8 +63,12 @@ export type MacGame = {
   };
   port?: {
     engine: string;
-    data: { from: 'steam-win' | 'gog-installer' | 'folder'; appid?: string; files: string[] };
+    data: MacPortData;
     launch: string[];
+    env?: Record<string, string>;
+    /** The wine engine hosting Windows Steam, for steam-win data. */
+    via?: string;
+    config?: MacPortConfig[];
   };
   native?: { steamAppId: string };
   minMacos: string;
@@ -119,13 +153,18 @@ function normalize(body: unknown): MacGame[] {
   return games
     .filter((g) => g && typeof g.game === 'string' && typeof g.name === 'string')
     .map((g) => {
-      const want = engineIds(g);
+      const want = engineIds(g, pool);
       const engines = g.engines?.length ? g.engines : pool.filter((e) => want.includes(e.id));
       return { ...g, notes: g.notes ?? [], tested: g.tested ?? [], engines };
     });
 }
 
-const engineIds = (g: MacGame) => [g.wine?.engine, g.wine?.renderer, g.port?.engine].filter((x): x is string => !!x);
+/** The engines a recipe names, then the runtimes those need (from `pool`). */
+function engineIds(g: MacGame, pool: MacEngine[] = g.engines ?? []): string[] {
+  const direct = [g.wine?.engine, g.wine?.renderer, g.port?.engine, g.port?.via].filter((x): x is string => !!x);
+  const needs = pool.filter((e) => direct.includes(e.id)).map((e) => e.needs).filter((x): x is string => !!x);
+  return [...new Set([...direct, ...needs])];
+}
 
 const tauri: Backend = {
   games: async () => {
@@ -332,7 +371,10 @@ export const clearMacError = (game: string) => macState(game).error && patch(gam
 export type MacStepId = 'engine' | 'windows' | 'steam' | 'data' | 'install' | 'play';
 export function macSteps(g: MacGame): MacStepId[] {
   if (g.route === 'native') return ['install', 'play'];
-  if (g.route === 'native-port') return g.port?.data.from === 'steam-win' ? ['engine', 'steam', 'data', 'play'] : ['engine', 'data', 'play'];
+  if (g.route === 'native-port') {
+    const from = g.port?.data.from;
+    return from === 'steam-win' ? ['engine', 'steam', 'data', 'play'] : from === 'none' ? ['engine', 'play'] : ['engine', 'data', 'play'];
+  }
   return ['engine', 'windows', 'steam', 'play'];
 }
 
@@ -367,42 +409,69 @@ export function stepOfProgress(step: string | undefined, g: MacGame): MacStepId 
 
 // ---------- Browser preview ----------
 
-/** Sample recipes for the five first-batch games (the preview only; the real ones come from sigf.ai). */
+/**
+ * Sample recipes (the preview only; the real ones come from sigf.ai): the first batch as served, plus two ports showing
+ * data from nowhere (OpenRA) and data copied into the engine's own folder with a config file (DevilutionX).
+ */
 export const SAMPLE_MAC_GAMES: MacGame[] = (() => {
-  const wine: MacEngine = { id: 'wine-11.18', name: 'Wine', version: '11.18', kind: 'wine', size: 191e6, sha256: '0'.repeat(64), url: 'https://github.com/Gcenx/macOS_Wine_builds/releases/download/11.18/wine-devel-11.18-osx64.tar.xz' };
-  const dxmt: MacEngine = { id: 'dxmt-0.72', name: 'DXMT', version: '0.72', kind: 'renderer', size: 9.4e6, sha256: '1'.repeat(64), url: 'https://github.com/3Shain/dxmt/releases/download/v0.72/dxmt-v0.72-builtin.tar.gz' };
-  const vcmi: MacEngine = { id: 'vcmi-1.7', name: 'VCMI', version: '1.7.0', kind: 'native', size: 64e6, sha256: '2'.repeat(64), url: 'https://github.com/vcmi/vcmi/releases/download/1.7.0/VCMI-macOS-arm.dmg' };
-  const gen: MacEngine = { id: 'generalsx-0.4', name: 'GeneralsX', version: '0.4', kind: 'native', size: 48e6, sha256: '3'.repeat(64), url: 'https://github.com/SIGFAI/generals-mac/releases/download/v0.4/GeneralsX-macOS.zip' };
-  const base = { env: {}, dllOverrides: 'd3d11,dxgi=n,b', args: [], store: 'steam-win' as const };
+  const runtime: MacEngine = { id: 'sikarugir-template-1.0.21', name: 'Wine runtime libraries (Sikarugir Template)', version: '1.0.21', kind: 'runtime', size: 95883080, sha256: 'bbe996e4e4375318485953d0c7818b7b4b0a4dc1f13303bcc584f99f7602f78d', url: 'https://github.com/Sikarugir-App/Wrapper/releases/download/v1.0/Template-1.0.21.tar.xz' };
+  const wine: MacEngine = { id: 'wine-sikarugir-10.0_8', name: 'Wine 10 (Sikarugir, CrossOver sources)', version: '10.0_8', kind: 'wine', size: 166321980, sha256: '2a6bcf2a3bf13cddf825599b6bc1e3659cbf71e1282c6d77141a92f6ac8d4c68', url: 'https://github.com/Sikarugir-App/Engines/releases/download/v1.0/WS12WineSikarugir10.0_8.tar.xz', needs: runtime.id };
+  const dxmt: MacEngine = { id: 'dxmt-0.80', name: 'DXMT', version: '0.80', kind: 'renderer', size: 18681669, sha256: '8f260e36b5739e68f3bad613381441385c4dc7b85b78ba8de653d5a6a264529d', url: 'https://github.com/3Shain/dxmt/releases/download/v0.80/dxmt-v0.80-builtin.tar.gz' };
+  const vcmi: MacEngine = { id: 'vcmi-1.7.5', name: 'VCMI', version: '1.7.5', kind: 'native', size: 35462171, sha256: 'b56b55d0671ae604effb12d0394b74a552f203426cafa165f82488505fb465e3', url: 'https://github.com/vcmi/vcmi/releases/download/1.7.5/VCMI-macOS-arm.dmg' };
+  const gen: MacEngine = { id: 'generalsx-zh-1.0.3', name: 'GeneralsX Zero Hour', version: '1.0.3', kind: 'native', size: 31334759, sha256: 'c5c0ef55608297c1d41bc3d0e5ce06b607441737e4f7cda080432ab254962a09', url: 'https://github.com/fbraz3/GeneralsX/releases/download/1.0.3/macOS-GeneralsXZH.zip' };
+  // Preview only: placeholder hashes.
+  const openra: MacEngine = { id: 'openra-20250330', name: 'OpenRA', version: '20250330', kind: 'native', size: 70e6, sha256: '4'.repeat(64), url: 'https://github.com/OpenRA/OpenRA/releases/download/release-20250330/OpenRA-release-20250330.dmg' };
+  const dvx: MacEngine = { id: 'devilutionx-1.5.4', name: 'DevilutionX', version: '1.5.4', kind: 'native', size: 12e6, sha256: '5'.repeat(64), url: 'https://github.com/diasurgical/DevilutionX/releases/download/1.5.4/devilutionx-macos-universal.dmg' };
+  const base = { env: { WINEMSYNC: '1' }, dllOverrides: 'dxgi,d3d11,d3d10core,winemetal=b;nvapi64,nvngx=', args: [], store: 'steam-win' as const };
   return [
     {
-      game: 'skyrim', name: 'The Elder Scrolls V: Skyrim Special Edition', route: 'wine', minMacos: '26.0',
-      wine: { ...base, engine: wine.id, renderer: dxmt.id, appid: '489830', exe: 'SkyrimSE.exe', verbs: ['vcrun2022'], online: 'offline-only' },
-      notes: ['Mods from the Mods tab install into the Windows folder, SKSE included.', 'Creation Club downloads need Bethesda.net: play offline here.'],
-      tested: [], engines: [wine, dxmt],
+      game: 'skyrim', name: 'The Elder Scrolls V: Skyrim Special Edition', route: 'wine', minMacos: '14.0',
+      wine: { ...base, engine: wine.id, renderer: dxmt.id, appid: '489830', exe: 'SkyrimSE.exe', verbs: ['vcrun2022'], online: 'none' },
+      notes: ['Mods install into the prefix exactly as on Windows (Data folder, SKSE next to SkyrimSE.exe).'],
+      tested: [], engines: [wine, runtime, dxmt],
     },
     {
-      game: 'witcher3', name: 'The Witcher 3: Wild Hunt', route: 'wine', minMacos: '26.0',
-      wine: { ...base, engine: wine.id, renderer: dxmt.id, appid: '292030', exe: 'bin/x64/witcher3.exe', args: ['-dx11'], verbs: ['vcrun2022'], online: 'none' },
-      notes: ['Runs the DirectX 11 build: the DirectX 12 option in the launcher is not supported.', 'Expect long shader compiles the first time a region loads.'],
-      tested: [{ by: 'SIGF', on: 'M3 Pro · macOS 26.1', result: 'menu' }], engines: [wine, dxmt],
+      game: 'witcher3', name: 'The Witcher 3: Wild Hunt', route: 'wine', minMacos: '14.0',
+      wine: { ...base, engine: wine.id, renderer: dxmt.id, appid: '292030', exe: 'bin/x64/witcher3.exe', online: 'none' },
+      notes: ['DX11 mode only: Play launches bin/x64/witcher3.exe directly.'],
+      tested: [{ by: 'SIGF', on: 'M3 Pro · macOS 26.1', result: 'menu' }], engines: [wine, runtime, dxmt],
     },
     {
-      game: 'homm3', name: 'Heroes of Might and Magic 3: Complete', route: 'native-port', minMacos: '26.0',
-      port: { engine: vcmi.id, data: { from: 'gog-installer', files: ['Data', 'Maps', 'Mp3'] }, launch: ['VCMI.app/Contents/MacOS/vcmilauncher'] },
-      notes: ['VCMI is an open-source engine for Heroes 3: it reads the maps, art and music from your GOG copy.', 'The Steam HD edition does not carry the files VCMI needs: use the GOG Complete edition.'],
+      game: 'homm3', name: 'Heroes of Might and Magic III', route: 'native-port', minMacos: '11.0',
+      port: { engine: vcmi.id, data: { from: 'gog-installer', files: ['Data', 'Maps', 'Mp3'], markers: ['vcmi/Data/H3bitmap.lod'] }, launch: ['VCMI.app/Contents/MacOS/vcmilauncher'] },
+      notes: ['The GOG offline backup installer (.exe + .bin) is imported by the VCMI launcher on first start.'],
       tested: [{ by: 'SIGF', on: 'M2 · macOS 26.0', result: 'works' }], engines: [vcmi],
     },
     {
-      game: 'generalszh', name: 'Command & Conquer Generals Zero Hour', route: 'native-port', minMacos: '26.0',
-      port: { engine: gen.id, data: { from: 'steam-win', appid: '2732960', files: ['Data', 'ZH_Generals', 'BIG files'] }, launch: ['GeneralsX.app/Contents/MacOS/GeneralsX'] },
-      notes: ['A native port of EA\'s GPL source release, with the game files from your copy.'],
-      tested: [], engines: [gen],
+      game: 'generalszh', name: 'Command & Conquer: Generals Zero Hour', route: 'native-port', minMacos: '15.0',
+      port: {
+        engine: gen.id, data: { from: 'steam-win', appid: '2732960', files: ['.'] }, launch: ['GeneralsXZH.app/Contents/MacOS/run.sh'],
+        env: { CNC_GENERALS_ZH_PATH: '{data}' }, via: wine.id,
+      },
+      notes: ['The Windows game files come from Windows Steam in a prefix.'],
+      tested: [], engines: [gen, wine, runtime],
     },
     {
-      game: 'aoe2de', name: 'Age of Empires II: Definitive Edition', route: 'native', minMacos: '26.0',
+      game: 'openra', name: 'Command & Conquer: Red Alert (OpenRA)', route: 'native-port', minMacos: '11.0',
+      port: { engine: openra.id, data: { from: 'none' }, launch: ['OpenRA - Red Alert.app/Contents/MacOS/OpenRA'] },
+      notes: ['OpenRA downloads the freeware Red Alert content itself on first start.'],
+      tested: [], engines: [openra],
+    },
+    {
+      game: 'diablo', name: 'Diablo + Hellfire', route: 'native-port', minMacos: '11.0',
+      port: {
+        engine: dvx.id,
+        data: { from: 'folder', files: ['DIABDAT.MPQ'], optional: ['hellfire.mpq', 'hfmonk.mpq', 'hfmusic.mpq', 'hfvoice.mpq'], into: '{appsupport}/diasurgical/devilution' },
+        launch: ['devilutionX.app/Contents/MacOS/devilutionX'],
+        config: [{ path: '{appsupport}/diasurgical/devilution/diablo.ini', text: '[Graphics]\nFullscreen=1\n', keep: true }],
+      },
+      notes: ['Pick the GOG Diablo folder: DIABDAT.MPQ (and the Hellfire files when present) are copied next to DevilutionX\'s settings.'],
+      tested: [], engines: [dvx],
+    },
+    {
+      game: 'aoe2de', name: 'Age of Empires II: Definitive Edition', route: 'native', minMacos: '15.7',
       native: { steamAppId: '813780' },
-      notes: ['The publisher\'s own Mac version: SIGF only starts it through Steam for Mac.'],
+      notes: ['Native Apple Silicon build in Mac Steam; no Wine.'],
       tested: [{ by: 'SIGF', on: 'M1 · macOS 26.0', result: 'works' }],
     },
   ];
@@ -413,7 +482,7 @@ function simBackend(): Backend {
   const q = typeof location === 'undefined' ? new URLSearchParams() : new URLSearchParams(location.search);
   const start = q.get('macstate') ?? 'fresh';
   let fail = q.get('macfail');
-  const sizes: Record<string, number> = { skyrim: 14.2e9, witcher3: 49.6e9, homm3: 1.1e9, generalszh: 3.4e9, aoe2de: 0 };
+  const sizes: Record<string, number> = { skyrim: 14.2e9, witcher3: 49.6e9, homm3: 1.1e9, generalszh: 3.4e9, openra: 0, diablo: 0.5e9, aoe2de: 0 };
   const sim = new Map<string, MacStatus>();
   const at = (game: string): MacStatus => {
     let s = sim.get(game);
@@ -421,6 +490,7 @@ function simBackend(): Backend {
       const g = SAMPLE_MAC_GAMES.find((x) => x.game === game);
       const route = g?.route ?? 'wine';
       const port = route === 'native-port';
+      const noData = port && g?.port?.data.from === 'none';
       const eng = macEngines(g ?? SAMPLE_MAC_GAMES[0]).bytes;
       const level = ['fresh', 'engine', 'steam', 'installed', 'running'].indexOf(start);
       s = {
@@ -428,8 +498,8 @@ function simBackend(): Backend {
         engine: level >= 1 ? 'ready' : 'missing',
         prefix: level >= 2 ? 'ready' : 'missing',
         store: level >= 2 ? 'installed' : 'missing',
-        game: level >= 3 ? 'installed' : 'missing',
-        ...(port ? { data: level >= 3 ? 'ready' : 'missing' } : {}),
+        game: level >= 3 || noData ? 'installed' : 'missing',
+        ...(port ? { data: level >= 3 || noData ? 'ready' : 'missing' } : {}),
         running: level >= 4,
         disk: { engineBytes: level >= 1 ? eng : 0, prefixBytes: level >= 2 ? 1.4e9 + (level >= 3 ? sizes[game] ?? 0 : 0) : 0 },
       } as MacStatus;
@@ -462,7 +532,7 @@ function simBackend(): Backend {
     setup: async (g) => {
       const s = at(g.game);
       const emitP = (step: string, done: number, total: number) => onProgress({ game: g.game, step, done, total });
-      if (g.route === 'native-port' && s.game === 'installed') {
+      if (g.route === 'native-port' && g.port?.data.from !== 'none' && s.game === 'installed') {
         for (let i = 0; i <= 10; i++) {
           emitP('copy-data', i, 10);
           await sleep(220);

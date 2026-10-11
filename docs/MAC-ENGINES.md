@@ -26,6 +26,40 @@ taken by downloading each file on 2026-10-08; for GitHub assets they match the r
 Native-port engines (VCMI, GeneralsX) come from the recipes agent's research; the core takes them as data (`.dmg`,
 `.zip`, `.tar.xz`, `.tar.gz` on GitHub releases).
 
+### Native-port engines (batch 2, 2026-10-11)
+
+Upstream release assets only: the app downloads each one from the project's own GitHub release (pinned sha256) on
+the player's Mac; SIGF never rehosts or modifies them. Arch / minimum macOS from Info.plist and the binary's
+`LC_BUILD_VERSION`; URLs, sizes and hashes in `GET /api/app/mac/games` (the fixture `src-tauri/tests/fixtures/mac-games.json`).
+
+| id | project | license | version | arch, min macOS | games |
+|---|---|---|---|---|---|
+| `openmw-0.51.0` | OpenMW | GPL-3.0 | 0.51.0 | arm64, 14.8 | morrowind |
+| `openrct2-0.5.6` | OpenRCT2 | GPL-3.0 | 0.5.6 | universal, 11.0 (unsigned) | rct2, rctclassic |
+| `devilutionx-1.5.5` | DevilutionX | Sustainable Use License (source-available) | 1.5.5 | universal, 11.0 | diablo |
+| `fallout1-ce-1.1.0` | Fallout Community Edition | Sustainable Use License (source-available) | 1.1.0 | universal, 11.0 | fallout1 |
+| `fallout2-ce-1.3.0` | Fallout 2 Community Edition | Sustainable Use License (source-available) | 1.3.0 | universal, 11.0 | fallout2 |
+| `uzdoom-5.0.3` | UZDoom | GPL-3.0 | 5.0.3 | arm64, 12.0 (unsigned) | doom, heretichexen |
+| `raze-1.11.0` | Raze | GPL-2.0+ with Build-licensed parts | 1.11.0 | universal, 11.0 | duke3d, blood, shadowwarrior, powerslave |
+| `openra-20250330` | OpenRA | GPL-3.0 | release-20250330 | universal, 11.0 | redalert, tiberiandawn |
+| `trx-1.11.1` | TRX | GPL-3.0 | 1.11.1 | universal, 12.0 | tombraider1, tombraider2 |
+| `julius-1.8.0` | Julius | AGPL-3.0 | 1.8.0 | universal, 11.0 | caesar3 |
+| `fs2open-26.0.1` | FreeSpace 2 Open | Volition source licence (non-commercial) | 26.0.1 | arm64, 11.0 | freespace2 |
+| `opengothic-0.92` | OpenGothic | MIT | 0.92 | arm64, 15.0 | gothic, gothic2 |
+| `corsixth-0.70.1` | CorsixTH | MIT | 0.70.1 | universal, 11.0 | themehospital |
+| `descent3-1.5.0` | Descent 3 (open source) | GPL-3.0 | 1.5.0 | arm64, 14.0 | descent3 |
+| `openloco-26.09` | OpenLoco | MIT | 26.09 | arm64, 15.0 | locomotion |
+| `ja2-stracciatella-0.22.1` | JA2 Stracciatella | SFI-SCLA (non-commercial) | 0.22.1 | arm64, 15.0 | ja2 |
+| `dethrace-0.10.1` | dethrace | GPL-3.0 plus a non-commercial clause in its README | 0.10.1 | universal, 15.0 | carmageddon |
+
+License caveats: the Sustainable Use License (DevilutionX, fallout1-ce, fallout2-ce) is source-available, not open
+source; FreeSpace 2 Open, JA2 Stracciatella and dethrace forbid commercial use. SIGF only points the app at the
+upstream download, never redistributes them, and charges nothing for Play on Mac.
+
+The OpenGothic and Descent 3 zips store their binaries without the execute bit: before a launch the core adds it to
+`launch[0]` (resolved inside the engine folder) when it has none. JA2 Stracciatella's asset name holds a `+`, which
+GitHub serves as `%2B`; the URL check accepts it (only encoded `.`, `/`, `\` and NUL are refused).
+
 Recommended Wine recipe values (Skyrim SE, The Witcher 3 DX11): `engine: 'wine-sikarugir-10.0_8'`,
 `renderer: 'dxmt-0.80'`, `dllOverrides: 'dxgi,d3d11,d3d10core,winemetal=b;nvapi64,nvngx='` (DXMT is installed as
 builtin DLLs, so `b`, never `n,b`), `env: { WINEMSYNC: '1', ROSETTA_ADVERTISE_AVX: '1' }`.

@@ -873,6 +873,7 @@ export const en = {
   'mac.stripTitle': "Plays on this Mac.",
   'mac.stripWine': "SIGF runs the Windows version of {game} in its own Windows folder, with your Steam copy. Set it up once, then play from here.",
   'mac.stripPort': "SIGF plays {game} with {engine}, an open-source Mac engine, and the files from your copy. Set it up once, then play from here.",
+  'mac.stripPortNoData': "SIGF plays {game} with {engine}, an open-source Mac engine that fetches the free game content itself. Set it up once, then play from here.",
   'mac.stripNative': "{game} has a Mac version: install it in Steam for Mac, then play from here.",
   'mac.hubTitle': "Play on Mac",
   'mac.hubSub': "Windows games SIGF runs on this Mac with your own copy. Set one up once, then it plays like any other game.",

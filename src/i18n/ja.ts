@@ -860,6 +860,7 @@ export const ja: Dict = {
   'mac.stripTitle': "この Mac で遊べます。",
   'mac.stripWine': "SIGF は {game} の Windows 版を専用の Windows フォルダーで、あなたの Steam のコピーを使って動かします。一度設定すれば、あとはここからプレイ。",
   'mac.stripPort': "SIGF はオープンソース Mac エンジン {engine} とあなたのコピーのファイルで {game} を動かします。一度設定すれば、あとはここからプレイ。",
+  'mac.stripPortNoData': "SIGF はオープンソース Mac エンジン {engine} で {game} を動かします。無料のゲームデータはエンジンが自分で取得します。一度設定すれば、あとはここからプレイ。",
   'mac.stripNative': "{game} には Mac 版があります。Mac 版 Steam でインストールして、ここからプレイ。",
   'mac.hubTitle': "Mac でプレイ",
   'mac.hubSub': "SIGF があなた自身のコピーでこの Mac で動かせる Windows ゲーム。一度設定すれば、ほかのゲームと同じように遊べます。",
