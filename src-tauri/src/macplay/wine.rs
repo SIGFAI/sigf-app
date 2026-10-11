@@ -379,6 +379,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)] // Unix paths in the expected values; Play on Mac runs on macOS only
     fn env_has_the_core_keys_then_the_recipe() {
         let w = Wine::new("/e/wswine.bundle".into(), "/p/skyrim".into(), "/l/skyrim.log".into()).with_recipe(&block());
         let env: Vec<(String, String)> = w.env_pairs().into_iter().map(|(k, v)| (k.to_string_lossy().into(), v.to_string_lossy().into())).collect();
