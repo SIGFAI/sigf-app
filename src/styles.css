@@ -1070,6 +1070,129 @@ textarea:focus { border-color: rgba(127, 224, 255, .5); }
   .ws-subnav { flex-wrap: wrap; }
 }
 
+/* ---------- Play on Mac (views/MacPlay.tsx) ---------- */
+.mac-sheet { position: relative; width: min(600px, 100%); max-height: 100%; overflow-y: auto; border-radius: 20px; background: var(--bg-2); border: 1px solid var(--line-2); box-shadow: 0 40px 100px rgba(0, 0, 0, .7); animation: pop .35s var(--ease-out); }
+.mac-cover { aspect-ratio: 21 / 8; }
+.mac-cover::after { background: linear-gradient(180deg, transparent 25%, var(--bg-2)); }
+.mac-body { padding: 0 28px 24px; margin-top: -38px; position: relative; }
+.mac-body > .eyebrow { display: inline-flex; align-items: center; gap: 7px; }
+.mac-body h2 { font: 400 22px/1.25 var(--f-display); margin: 10px 0 12px; }
+.mac-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 20px; }
+.mac-tag { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 9px; border-radius: 7px; font: 500 11px var(--f-ui); color: var(--ink-2); background: rgba(255, 255, 255, .03); border: 1px solid var(--line-2); white-space: nowrap; }
+.mac-tag i { width: 6px; height: 6px; border-radius: 50%; background: var(--c, var(--ink-3)); box-shadow: 0 0 8px -1px var(--c, transparent); }
+.mac-tag em { font: normal 400 10.5px var(--f-mono); color: var(--ink-3); }
+.mac-tag.works { --c: var(--ok); color: var(--ink); border-color: rgba(143, 240, 180, .28); }
+.mac-tag.menu { --c: var(--warn); border-color: rgba(255, 214, 140, .28); }
+.mac-tag.broken { --c: #ff8a9a; border-color: rgba(255, 90, 110, .32); }
+.mac-tag.untested { color: var(--ink-3); border-style: dashed; }
+.mac-tag.warnish { color: var(--warn); border-color: rgba(255, 214, 140, .3); }
+
+.mac-progress-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; font: 500 10.5px var(--f-mono); letter-spacing: .12em; text-transform: uppercase; color: var(--ink-3); }
+.mac-pips { display: flex; gap: 4px; }
+.mac-pips em { width: 22px; height: 3px; border-radius: 3px; background: rgba(255, 255, 255, .09); transition: background .3s; }
+.mac-pips em.done { background: var(--ok); }
+.mac-pips em.on { background: linear-gradient(90deg, #5a96ff, #7fe0ff); }
+.mac-error { margin-bottom: 12px; }
+.mac-error > span { display: flex; gap: 10px; align-items: flex-start; }
+.mac-error > span svg { color: var(--warn); flex: none; margin-top: 2px; }
+.mac-error .host-actions { justify-content: flex-start; }
+
+.mac-steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.mac-step { position: relative; display: flex; gap: 14px; padding: 12px 14px; border-radius: 14px; border: 1px solid transparent; color: var(--ink-4); transition: background .3s, border-color .3s, color .3s; }
+.mac-num { width: 24px; height: 24px; flex: none; display: grid; place-items: center; border-radius: 50%; border: 1px solid var(--line-2); font: normal 500 11px var(--f-mono); color: var(--ink-3); transition: background .3s, border-color .3s; }
+.mac-step-main { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.mac-step-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.mac-step-head b { font-weight: 500; font-size: 14px; line-height: 24px; }
+.mac-step-head em { font: normal 500 10px var(--f-mono); letter-spacing: .12em; text-transform: uppercase; color: var(--ok); }
+.mac-step-main > small { font: 11.5px var(--f-mono); color: var(--ink-4); overflow-wrap: anywhere; }
+.mac-step.done { color: var(--ink-2); }
+.mac-step.done .mac-num { border-color: transparent; background: var(--ok); color: #04130a; }
+.mac-step.done .mac-step-main > small { color: var(--ink-3); }
+.mac-step.on { color: var(--ink); background: rgba(255, 255, 255, .03); border-color: var(--line-2); animation: rise .35s var(--ease-out); }
+.mac-step.on .mac-num { border-color: #7fe0ff; color: var(--ink); box-shadow: 0 0 12px -2px rgba(127, 224, 255, .6); }
+.mac-step.on .mac-step-main > small { color: var(--ink-3); }
+.mac-step.live { border-color: rgba(143, 240, 180, .3); background: radial-gradient(400px 120px at 0% 0%, rgba(143, 240, 180, .07), transparent 70%), rgba(255, 255, 255, .02); }
+.mac-step.live .mac-num { border-color: var(--ok); color: var(--ok); }
+.mac-step-body { display: grid; gap: 12px; margin-top: 10px; }
+.mac-step-body p { margin: 0; font-size: 13px; line-height: 1.55; color: var(--ink-2); }
+.mac-howto { font-size: 13px; }
+.mac-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.mac-actions .act-big { min-width: 200px; }
+.mac-private { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--ink-3); }
+.mac-private svg { color: var(--ok); }
+
+.mac-run { padding: 12px 14px 10px; border-radius: 12px; border: 1px solid var(--line-2); background: rgba(5, 5, 6, .5); }
+.mac-run > div { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-bottom: 9px; }
+.mac-run b { font-weight: 500; font-size: 13px; }
+.mac-run small { font: 11.5px var(--f-mono); color: var(--ink-2); white-space: nowrap; }
+.mac-run .bar { display: block; height: 3px; border-radius: 3px; background: rgba(255, 255, 255, .07); position: relative; overflow: hidden; }
+.mac-run .bar::after { content: ''; position: absolute; inset: 0; width: var(--p); background: var(--prism); transition: width .25s linear; }
+.mac-run .bar.indet::after { width: 35%; animation: update-slide 1.3s infinite var(--ease-io); }
+
+.mac-wait { display: flex; align-items: center; gap: 14px; padding: 12px 14px; border-radius: 12px; border: 1px solid rgba(127, 224, 255, .25); background: radial-gradient(360px 120px at 0% 0%, rgba(127, 224, 255, .07), transparent 70%); }
+.mac-wait > div { flex: 1; min-width: 0; }
+.mac-wait b { display: block; font-weight: 500; font-size: 13.5px; }
+.mac-wait small { font-size: 12px; color: var(--ink-3); }
+.mac-ring { position: relative; width: 30px; height: 30px; flex: none; border-radius: 50%; border: 1px solid rgba(127, 224, 255, .3); }
+.mac-ring::after { content: ''; position: absolute; inset: -1px; border-radius: 50%; border: 2px solid transparent; border-top-color: #7fe0ff; animation: spin 1.2s linear infinite; }
+
+.mac-live { display: inline-flex; align-items: center; gap: 8px; font: 500 12.5px var(--f-ui); color: var(--ok); }
+.mac-live i { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 10px var(--ok); animation: pulse 1.6s infinite; }
+.mac-live-hero { height: 38px; padding: 0 14px; border-radius: 10px; background: rgba(5, 5, 6, .6); border: 1px solid rgba(143, 240, 180, .3); backdrop-filter: blur(10px); }
+
+.mac-h4 { font: 500 11px var(--f-mono); letter-spacing: .14em; text-transform: uppercase; color: var(--ink-3); margin: 22px 0 10px; }
+.mac-notes { font-size: 13px; }
+.mac-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 22px; padding-top: 16px; border-top: 1px solid var(--line); }
+.mac-disk { display: flex; align-items: center; gap: 10px; min-width: 0; color: var(--ink-3); }
+.mac-disk svg { flex: none; }
+.mac-disk b { font-weight: 500; font-size: 13px; color: var(--ink-2); white-space: nowrap; }
+.mac-disk small { font: 11px var(--f-mono); color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mac-remove { flex: 1; display: grid; gap: 12px; animation: rise .3s var(--ease-out); }
+.mac-remove .ws-note { margin: 0; }
+.mac-remove .host-actions { margin: 0; }
+.mac-remove-opts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.mac-remove-opts button { display: grid; gap: 4px; align-content: start; text-align: left; padding: 10px 12px; border-radius: 11px; border: 1px solid var(--line-2); color: var(--ink-3); transition: border-color .2s, background .2s, color .2s; }
+.mac-remove-opts button:hover:not(:disabled) { color: var(--ink-2); }
+.mac-remove-opts button.on { color: var(--ink); border-color: rgba(255, 90, 110, .45); background: rgba(255, 90, 110, .06); }
+.mac-remove-opts b { display: flex; justify-content: space-between; gap: 8px; font-weight: 500; font-size: 13px; }
+.mac-remove-opts em { font: normal 11px var(--f-mono); color: var(--ink-3); }
+.mac-remove-opts small { font-size: 11.5px; line-height: 1.4; }
+.mac-skel { display: grid; gap: 8px; }
+.mac-skel i { height: 52px; border-radius: 14px; background: rgba(255, 255, 255, .035); position: relative; overflow: hidden; }
+.mac-skel i::after { content: ''; position: absolute; inset: 0; background: linear-gradient(100deg, transparent 30%, rgba(255, 255, 255, .05), transparent 70%); animation: shimmer 1.4s infinite; }
+.mac-unsupported { padding: 36px 20px; }
+
+/* Game page: the strip under the tabs */
+.mac-strip { align-items: center; margin: 0 0 20px; color: var(--ink-2); background: radial-gradient(500px 120px at 0% 0%, rgba(127, 224, 255, .07), transparent 70%), rgba(255, 255, 255, .015); border-color: rgba(127, 224, 255, .22); }
+.mac-strip svg { color: #7fe0ff; }
+.mac-strip > span { flex: 1; line-height: 1.5; }
+.mac-strip b { color: var(--ink); font-weight: 600; }
+
+/* Hub: Play on Mac cards */
+.mac-card { position: relative; }
+.mac-card-art { position: relative; aspect-ratio: 460 / 215; overflow: hidden; }
+.mac-card-art > .art { position: absolute; inset: 0; }
+.mac-card-art img { transition: transform .5s var(--ease-out); }
+.mac-card:hover .mac-card-art img { transform: scale(1.03); }
+.mac-card-art::after { content: ''; position: absolute; inset: 0; background: linear-gradient(180deg, rgba(5, 5, 6, .35), transparent 40%); pointer-events: none; }
+.mac-route { position: absolute; z-index: 1; top: 8px; left: 8px; }
+.mac-test { position: absolute; z-index: 1; top: 8px; right: 8px; }
+.mac-test.works { color: var(--ok); border-color: rgba(143, 240, 180, .35); }
+.mac-test.menu { color: var(--warn); border-color: rgba(255, 214, 140, .35); }
+.mac-test.broken { color: #ff8a9a; border-color: rgba(255, 90, 110, .4); }
+.mac-test.untested { color: var(--ink-3); border-style: dashed; }
+.mac-card-state { display: flex; align-items: center; gap: 7px; }
+.mac-card-state em { margin-left: auto; font-style: normal; color: var(--ink-4); }
+.mac-dot { width: 6px; height: 6px; border-radius: 50%; flex: none; }
+.mac-dot.ok { background: var(--ok); box-shadow: 0 0 8px var(--ok); }
+.mac-dot.live { background: var(--ok); box-shadow: 0 0 8px var(--ok); animation: pulse 1.6s infinite; }
+.mac-card.ready .mac-card-state { color: var(--ok); }
+.mac-card.live { border-color: rgba(143, 240, 180, .35); }
+
+@media (max-width: 760px) {
+  .mac-remove-opts { grid-template-columns: 1fr; }
+  .mac-foot { flex-wrap: wrap; }
+}
 /* Minecraft profile bar (views/McProfile.tsx): the SIGF Prism instance mods go into, and Play for it. */
 .mc-profile { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; margin-bottom: 14px; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--line); background: rgba(255, 255, 255, .02); }
 .mc-profile-pick { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; flex: 1; min-width: 0; }

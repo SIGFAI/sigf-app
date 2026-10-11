@@ -132,6 +132,9 @@ export function Icon({ name, size = 20 }: { name: string; size?: number }) {
     games: (<><rect x="3" y="7" width="18" height="11" rx="4" /><path d="M7.5 11v3M6 12.5h3" /><circle cx="15.5" cy="11.5" r=".9" fill="currentColor" stroke="none" /><circle cx="17.5" cy="13.8" r=".9" fill="currentColor" stroke="none" /></>),
     down: <path d="M6 9l6 6 6-6" />,
     trash: (<><path d="M5 7h14M10 7V5h4v2M7 7l1 12h8l1-12" /></>),
+    laptop: (<><rect x="5" y="5" width="14" height="10" rx="1.5" /><path d="M3 18.5h18" /></>),
+    stop: <rect x="7" y="7" width="10" height="10" rx="1.5" fill="currentColor" stroke="none" />,
+    disk: (<><rect x="4" y="5" width="16" height="14" rx="2" /><path d="M4 14h16" /><circle cx="16.5" cy="16.5" r=".9" fill="currentColor" stroke="none" /></>),
     ext: (<><path d="M14 4h6v6M20 4l-9 9" /><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" /></>),
   };
   return (

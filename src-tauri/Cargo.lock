@@ -1032,7 +1032,7 @@ dependencies = [
  "rustc_version",
  "toml 1.1.6+spec-1.1.0",
  "vswhom",
- "winreg",
+ "winreg 0.55.0",
 ]
 
 [[package]]
@@ -3797,9 +3797,9 @@ checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
 
 [[package]]
 name = "sigf-app"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
- "base64 0.22.1",
+ "base64 0.23.1",
  "md-5",
  "regex",
  "reqwest",
@@ -3822,7 +3822,7 @@ dependencies = [
  "tungstenite",
  "uuid",
  "windows-sys 0.61.2",
- "winreg",
+ "winreg 0.56.0",
  "zip 8.6.0",
 ]
 
@@ -5547,6 +5547,16 @@ checksum = "cb5a765337c50e9ec252c2069be9bf91c7df47afb103b642ba3a53bf8101be97"
 dependencies = [
  "cfg-if",
  "windows-sys 0.59.0",
+]
+
+[[package]]
+name = "winreg"
+version = "0.56.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7d6f32a0ff4a9f6f01231eb2059cc85479330739333e0e58cadf03b6af2cca10"
+dependencies = [
+ "cfg-if",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

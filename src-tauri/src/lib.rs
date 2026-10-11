@@ -2,6 +2,7 @@ pub mod hosted;
 pub mod install;
 pub mod join;
 pub mod launch;
+pub mod macplay;
 pub mod mcprofile;
 pub mod mods;
 pub mod privacy;
@@ -104,6 +105,11 @@ fn launch(app: tauri::AppHandle, uri: String) -> Result<(), String> {
         return Err(format!("refused launch uri: {uri}"));
     }
     app.opener().open_url(uri, None::<&str>).map_err(|e| e.to_string())
+}
+
+/// Opens a store URI (the `LAUNCH_SCHEMES` rule) from the core: Play on Mac's native route (`steam://rungameid`).
+pub(crate) fn open_store_uri(app: &tauri::AppHandle, uri: String) -> Result<(), String> {
+    launch(app.clone(), uri)
 }
 
 /// Prism as found by the Minecraft scan; only its data dir is required to write an instance.
@@ -294,7 +300,8 @@ struct ApiAnswer {
 }
 
 /// Calls the sigf.ai app API: `/api/app/lobbies*` (GET, POST or DELETE, an optional JSON body and host secret), the
-/// Workshop proxy `/api/app/workshop/*` and the mods proxy `/api/app/mods/*` (GET only). Nothing else.
+/// Workshop proxy `/api/app/workshop/*`, the mods proxy `/api/app/mods/*` and the Mac recipes `/api/app/mac/games`
+/// (GET only). Nothing else.
 #[tauri::command]
 async fn lobby_api(method: String, path: String, body: Option<String>, secret: Option<String>) -> Result<ApiAnswer, String> {
     if !lobby_path_ok(&method, &path) {
@@ -331,6 +338,9 @@ async fn lobby_api(method: String, path: String, body: Option<String>, secret: O
 /// `/api/app/workshop/collection/<id>`. Checked whole, before any URL is built, so no `..`, `%2e` or `%2f` can reach
 /// another sigf.ai path.
 fn lobby_path_ok(method: &str, path: &str) -> bool {
+    if path == "/api/app/mac/games" {
+        return method == "GET";
+    }
     if let Some(rest) = path.strip_prefix("/api/app/workshop/") {
         return method == "GET" && workshop_path_ok(rest);
     }
@@ -773,7 +783,10 @@ pub fn run() {
             workshop::workshop_subscribe, workshop::workshop_unsubscribe, workshop::workshop_state, workshop::libraries_list, workshop::libraries_save,
             workshop::libraries_delete, mods::mods_install, mods::nxm_handler, mods::nxm_handler_state, mods::nexus_status, mods::nexus_login,
             mods::nexus_logout, mods::nexus_validate, mods::nexus_set_key, mods::nexus_download_links,
-            mcprofile::mc_profile_state, mcprofile::mc_profile_play
+            mcprofile::mc_profile_state, mcprofile::mc_profile_play,
+            macplay::mac_status, macplay::mac_setup, macplay::mac_store, macplay::mac_play, macplay::mac_stop, macplay::mac_remove,
+            macplay::mac_copy_data,
+            macplay::mac_pick_data
         ])
         .run(tauri::generate_context!())
         .expect("error while running the SIGF app");
@@ -887,6 +900,16 @@ mod tests {
         ] {
             assert!(!lobby_path_ok("GET", bad), "{bad}");
         }
+    }
+
+    #[test]
+    fn mac_games_path() {
+        assert!(lobby_path_ok("GET", "/api/app/mac/games"));
+        for bad in ["/api/app/mac/games?x=1", "/api/app/mac/games/", "/api/app/mac/games/../../admin", "/api/app/mac", "/api/app/mac/other", "/api/app/mac/gamesx"] {
+            assert!(!lobby_path_ok("GET", bad), "{bad}");
+        }
+        assert!(!lobby_path_ok("POST", "/api/app/mac/games"));
+        assert!(!lobby_path_ok("DELETE", "/api/app/mac/games"));
     }
 
     #[test]

@@ -104,10 +104,17 @@ fn looks_like_tool(name: &str) -> bool {
 }
 
 pub fn scan() -> Option<Vec<Game>> {
-    let root = steam_root()?;
-    let cache = library_cache();
+    Some(scan_root(&steam_root()?, None))
+}
+
+/// The games of one Steam client folder and its libraries. `prefix`: a Windows Steam inside a Play-on-Mac prefix
+/// (macOS, `src/macplay`): only its own `steamapps` (its other libraries are Windows paths), no `steam://` launch
+/// (Mac Steam would get it) and no local art (outside the asset scope); its games carry the prefix's game id.
+pub fn scan_root(root: &Path, prefix: Option<&str>) -> Vec<Game> {
+    let cache = if prefix.is_some() { None } else { library_cache() };
+    let libs = if prefix.is_some() { vec![root.to_path_buf()] } else { libraries(root) };
     let mut games = Vec::new();
-    for lib in libraries(&root) {
+    for lib in libs {
         let apps = lib.join("steamapps");
         let Ok(dir) = std::fs::read_dir(&apps) else { continue };
         for e in dir.flatten() {
@@ -136,23 +143,24 @@ pub fn scan() -> Option<Vec<Game>> {
                 install_dir: dir.map(|d| d.to_string_lossy().to_string()),
                 build: s.str("buildid").map(String::from),
                 size_bytes: s.str("SizeOnDisk").and_then(|x| x.parse().ok()),
-                launch: Some(format!("steam://rungameid/{id}")),
+                launch: prefix.is_none().then(|| format!("steam://rungameid/{id}")),
                 art: Some(format!("https://cdn.cloudflare.steamstatic.com/steam/apps/{id}/library_600x900.jpg")),
                 art_wide: Some(format!("https://cdn.cloudflare.steamstatic.com/steam/apps/{id}/header.jpg")),
                 art_local: cache.as_deref().and_then(|c| cached(c, id, &["library_600x900.jpg", "library_capsule.jpg"])),
                 hero_local: cache.as_deref().and_then(|c| cached(c, id, &["library_hero.jpg"])),
                 wide_local: cache.as_deref().and_then(|c| cached(c, id, &["header.jpg", "library_header.jpg"])),
+                prefix: prefix.map(String::from),
             });
         }
     }
     // Tools, software and editors install like games: keep what Steam itself calls a game.
     let ids: HashSet<u32> = games.iter().filter_map(|g| g.store_id.parse().ok()).collect();
-    let types = app_types(&root, &ids);
+    let types = app_types(root, &ids);
     games.retain(|g| match g.store_id.parse().ok().and_then(|id: u32| types.get(&id)) {
         Some(t) => t == "game",
         None => !looks_like_tool(&g.name),
     });
-    Some(games)
+    games
 }
 
 #[cfg(test)]

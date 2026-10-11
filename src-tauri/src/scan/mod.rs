@@ -33,6 +33,10 @@ pub struct Game {
     pub art_local: Option<String>,
     pub hero_local: Option<String>,
     pub wide_local: Option<String>,
+    /// macOS: the Play-on-Mac prefix (its game id) whose Windows Steam installed this game (`src/macplay`). Mods
+    /// install into `install_dir` there as on Windows; Play goes through `mac_play`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prefix: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -69,6 +73,12 @@ pub fn scan() -> Scan {
             out.games.extend(games);
         }
     }
+    // macOS: Windows games installed by Windows Steam inside the Play-on-Mac prefixes.
+    let in_prefixes = crate::macplay::scan_prefix_games();
+    if !in_prefixes.is_empty() && !out.stores.contains(&"steam") {
+        out.stores.push("steam");
+    }
+    out.games.extend(in_prefixes);
     let (launchers, mc) = minecraft::scan();
     if let Some(g) = mc {
         out.stores.push("minecraft");

@@ -29,6 +29,7 @@ pub fn scan() -> Option<Vec<Game>> {
             art_local: None,
             hero_local: None,
             wide_local: None,
+            prefix: None,
         });
     }
     Some(games)

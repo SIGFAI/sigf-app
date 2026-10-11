@@ -99,6 +99,11 @@ export const GAMES: CanonGame[] = [
   { id: 'crashtrilogy', name: 'Crash Bandicoot N. Sane Trilogy', short: 'Crash Trilogy', steam: ['731490'], store: 'https://store.steampowered.com/app/731490' },
   // The player's own ROM (own_copies): never scanned, never sold here, so no store link.
   { id: 'sm64', name: 'Super Mario 64', short: 'Mario 64', hue: 0 },
+  // Play on Mac, first batch (app/docs/MAC-PLAY.md): Skyrim above, and these.
+  { id: 'witcher3', name: 'The Witcher 3: Wild Hunt', short: 'Witcher 3', steam: ['292030'], store: 'https://store.steampowered.com/app/292030' },
+  { id: 'homm3', name: 'Heroes of Might and Magic 3: Complete', short: 'Heroes 3', steam: ['297000'], store: 'https://www.gog.com/game/heroes_of_might_and_magic_3_complete_edition' },
+  { id: 'generalszh', name: 'Command & Conquer Generals Zero Hour', short: 'Generals ZH', steam: ['2732960'], store: 'https://store.steampowered.com/app/2732960' },
+  { id: 'aoe2de', name: 'Age of Empires II: Definitive Edition', short: 'AoE II DE', steam: ['813780'], store: 'https://store.steampowered.com/app/813780' },
 ];
 
 export const GAME = Object.fromEntries(GAMES.map((g) => [g.id, g])) as Record<string, CanonGame>;

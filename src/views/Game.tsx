@@ -19,6 +19,8 @@ import {
   AddButton, AddMenu, GameHero, ImportSheet, ItemSheet, Libraries, LibraryRow, LibrarySheet, PageCtx, Preview, Skeletons, SteamBanner, WorkshopTab,
   bytes, errorText, keyName, modStatusLabel, steamGameKey, useEscape, useLatest, usePage, when, whenShort, type Page,
 } from './Workshop';
+import { MacHeroActions, MacHubSection, MacSheet, MacStrip, useOpenOnArrival } from './MacPlay';
+import { macAppid, useMacGame, type MacGame } from '../lib/macplay';
 import { McProfileBar } from './McProfile';
 import { useMcProfileKey } from '../lib/mcprofile';
 import { t, type Key } from '../i18n';
@@ -38,15 +40,15 @@ export type GameInfo = {
   workshop: boolean;
 };
 
-export function resolveGame(ctx: Ctx, key: string, mod?: ModGame): GameInfo {
+export function resolveGame(ctx: Ctx, key: string, mod?: ModGame, mac?: MacGame): GameInfo {
   const games = ctx.scan?.games ?? [];
   const steamId = key.startsWith('steam:') ? key.slice(6) : null;
   const canon = steamId ? null : key;
   const steamScan = games.find((g) => g.store === 'steam' && (steamId ? g.storeId === steamId : g.canon === canon));
   const scanned = steamScan ?? (canon ? games.find((g) => g.canon === canon) : undefined);
-  const appid = steamId ?? steamScan?.storeId ?? mod?.steam ?? (canon ? GAME[canon]?.steam?.[0] : undefined) ?? '';
+  const appid = steamId ?? steamScan?.storeId ?? mod?.steam ?? (canon ? GAME[canon]?.steam?.[0] : undefined) ?? (mac ? macAppid(mac) : undefined) ?? '';
   return {
-    key, canon: canon ?? scanned?.canon ?? null, name: scanned?.name ?? (canon ? GAME[canon]?.name : undefined) ?? mod?.name ?? keyName(ctx, key),
+    key, canon: canon ?? scanned?.canon ?? null, name: scanned?.name ?? (canon ? GAME[canon]?.name : undefined) ?? mod?.name ?? mac?.name ?? keyName(ctx, key),
     appid, onPc: !!scanned, steamOnPc: !!steamScan, scanned, mod, workshop: !!steamScan && ctx.workshopOn,
   };
 }
@@ -980,6 +982,11 @@ function GamePage({ ctx, g, nav, banner, setBanner, fail, onImport, onHub }: {
   };
   const launch = g.scanned?.launch;
   const store = g.canon ? GAME[g.canon]?.store : undefined;
+  // Play on Mac: a Mac recipe for this game (macOS only). A Mac version Steam already lists plays as any other game.
+  const macRecipe = useMacGame(g.key);
+  const mac = macRecipe && !(macRecipe.route === 'native' && launch) ? macRecipe : undefined;
+  const [macOpen, setMacOpen] = useState(false);
+  useOpenOnArrival(nav.mac, nav.n, !!mac, () => setMacOpen(true));
   const sourceNames = g.mod ? sourcesOf(g.mod, false).map((s) => SOURCE_NAME[s]) : [];
 
   return (
@@ -989,7 +996,7 @@ function GamePage({ ctx, g, nav, banner, setBanner, fail, onImport, onHub }: {
           <div className="ws-hero-art" aria-hidden><GameHero ctx={ctx} gameKey={g.key} appid={g.appid} /></div>
           <div className="ws-hero-copy">
             <button className="ws-back" onClick={onHub}><Icon name="back" size={14} /> {t('ws.allGames')}</button>
-            <span className="eyebrow">{g.scanned ? STORE_LABEL[g.scanned.store] : t('game.notOnPcShort')}{sourceNames.length > 0 && ` · ${sourceNames.join(' · ')}`}</span>
+            <span className="eyebrow">{g.scanned ? STORE_LABEL[g.scanned.store] : mac ? t('mac.eyebrow') : t('game.notOnPcShort')}{sourceNames.length > 0 && ` · ${sourceNames.join(' · ')}`}</span>
             <h1>{g.name}</h1>
             <p className="ws-stats">
               <span><b>{installed.length}</b> {t('game.statMods', { count: installed.length })}</span>
@@ -1011,7 +1018,9 @@ function GamePage({ ctx, g, nav, banner, setBanner, fail, onImport, onHub }: {
                     <Icon name="restore" size={14} /> {t('game.restoreAll')}
                   </button>
                 )}
-                {launch ? (
+                {mac ? (
+                  <MacHeroActions ctx={ctx} g={mac} onOpen={() => setMacOpen(true)} />
+                ) : launch ? (
                   <button className="act act-play act-hero" onClick={() => { void launchGame(launch); ctx.flash(t('toast.launching', { name: g.name })); }} title={installed.length ? t('game.playTitleMods', { count: installed.length }) : t('lib.launchVanilla')}>
                     <Icon name="play" size={14} /> {t('card.play')}
                   </button>
@@ -1035,7 +1044,8 @@ function GamePage({ ctx, g, nav, banner, setBanner, fail, onImport, onHub }: {
           ))}
         </nav>
 
-        {!g.onPc && ctx.scan && (
+        {mac && <MacStrip g={mac} onOpen={() => setMacOpen(true)} />}
+        {!g.onPc && ctx.scan && !mac && (
           <div className="trust trust-warn game-missing">
             <Icon name="restore" size={16} />
             <span>{t('mods.notOnPc', { game: g.name })}</span>
@@ -1056,6 +1066,7 @@ function GamePage({ ctx, g, nav, banner, setBanner, fail, onImport, onHub }: {
       {mod && <ModSheet key={mod.ref} item={mod} onClose={() => setMod(null)} />}
       {editing && <LibrarySheet lib={editing} onClose={() => setEditing(null)} />}
       {nexus && <NexusSheet onClose={() => setNexus(false)} />}
+      {macOpen && mac && <MacSheet ctx={ctx} g={mac} onClose={() => setMacOpen(false)} />}
     </PageCtx.Provider>
   );
 }
@@ -1123,6 +1134,8 @@ function Hub({ ctx, fail, onImport }: { ctx: Ctx; fail: (e: unknown) => void; on
         )}
       </Section>
 
+      <MacHubSection ctx={ctx} />
+
       <Section title={t('ws.libsAll')} sub={t('ws.libsAllSub')}>
         {libs === null ? (
           <div className="empty">{t('ws.loadingLibs')}</div>
@@ -1152,7 +1165,8 @@ export function Games({ ctx, nav }: { ctx: Ctx; nav: GameNav }) {
     setSeen(nav.link.n);
     setImporting({ text: nav.link.text, n: nav.link.n });
   }
-  const g = nav.key ? resolveGame(ctx, nav.key, games?.find((x) => x.game === nav.key)) : null;
+  const macGame = useMacGame(nav.key);
+  const g = nav.key ? resolveGame(ctx, nav.key, games?.find((x) => x.game === nav.key), macGame) : null;
   const latest = useLatest(ctx);
   /** Steam refusals (not running...) show as a banner on a game page; others as a toast. */
   const fail = useCallback((e: unknown) => (g?.workshop && isCode(e, STEAM_BLOCKING) ? setBanner(e) : latest.current.flash(errorText(e, g?.name ?? ''))), [g?.key, g?.workshop]);

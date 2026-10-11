@@ -1,0 +1,186 @@
+{
+  "engines": [
+    {
+      "id": "wine-sikarugir-10.0_8",
+      "name": "Wine 10 (Sikarugir, CrossOver sources)",
+      "version": "10.0_8",
+      "url": "https://github.com/Sikarugir-App/Engines/releases/download/v1.0/WS12WineSikarugir10.0_8.tar.xz",
+      "sha256": "2a6bcf2a3bf13cddf825599b6bc1e3659cbf71e1282c6d77141a92f6ac8d4c68",
+      "size": 166321980,
+      "kind": "wine",
+      "needs": "sikarugir-template-1.0.21"
+    },
+    {
+      "id": "sikarugir-template-1.0.21",
+      "name": "Wine runtime libraries (Sikarugir Template)",
+      "version": "1.0.21",
+      "url": "https://github.com/Sikarugir-App/Wrapper/releases/download/v1.0/Template-1.0.21.tar.xz",
+      "sha256": "bbe996e4e4375318485953d0c7818b7b4b0a4dc1f13303bcc584f99f7602f78d",
+      "size": 95883080,
+      "kind": "runtime"
+    },
+    {
+      "id": "dxmt-0.80",
+      "name": "DXMT",
+      "version": "0.80",
+      "url": "https://github.com/3Shain/dxmt/releases/download/v0.80/dxmt-v0.80-builtin.tar.gz",
+      "sha256": "8f260e36b5739e68f3bad613381441385c4dc7b85b78ba8de653d5a6a264529d",
+      "size": 18681669,
+      "kind": "renderer"
+    },
+    {
+      "id": "vcmi-1.7.5",
+      "name": "VCMI",
+      "version": "1.7.5",
+      "url": "https://github.com/vcmi/vcmi/releases/download/1.7.5/VCMI-macOS-arm.dmg",
+      "sha256": "b56b55d0671ae604effb12d0394b74a552f203426cafa165f82488505fb465e3",
+      "size": 35462171,
+      "kind": "native"
+    },
+    {
+      "id": "generalsx-zh-1.0.3",
+      "name": "GeneralsX Zero Hour",
+      "version": "1.0.3",
+      "url": "https://github.com/fbraz3/GeneralsX/releases/download/1.0.3/macOS-GeneralsXZH.zip",
+      "sha256": "c5c0ef55608297c1d41bc3d0e5ce06b607441737e4f7cda080432ab254962a09",
+      "size": 31334759,
+      "kind": "native"
+    }
+  ],
+  "games": [
+    {
+      "game": "skyrim",
+      "name": "The Elder Scrolls V: Skyrim Special Edition",
+      "route": "wine",
+      "wine": {
+        "engine": "wine-sikarugir-10.0_8",
+        "renderer": "dxmt-0.80",
+        "store": "steam-win",
+        "appid": "489830",
+        "exe": "SkyrimSE.exe",
+        "env": {
+          "WINEMSYNC": "1"
+        },
+        "dllOverrides": "dxgi,d3d11,d3d10core,winemetal=b;nvapi64,nvngx=",
+        "args": [],
+        "verbs": [
+          "vcrun2022"
+        ],
+        "online": "none"
+      },
+      "minMacos": "14.0",
+      "notes": [
+        "Steam Special Edition (Windows build, app 489830) only; the 2011 original and Skyrim VR are not covered.",
+        "Steam Play opens the Skyrim launcher first; its auto-detected preset can pick a resolution the Mac cannot hold: choose a modest preset once.",
+        "Reported on CrossOver 25.1.1 / M4 Pro: crash after the Bethesda logo, with or without SKSE (CodeWeavers forum). Current CrossOver rating is Runs Great via DXMT.",
+        "Some mods and ENB presets bind Home/End/Insert keys a Mac keyboard lacks: remap them in the mod .ini files.",
+        "Very large mod lists have crashed at random under Wine (memory); add mods in small steps and keep a save.",
+        "Mods install into the prefix exactly as on Windows (Data folder, SKSE next to SkyrimSE.exe)."
+      ],
+      "tested": []
+    },
+    {
+      "game": "witcher3",
+      "name": "The Witcher 3: Wild Hunt",
+      "route": "wine",
+      "wine": {
+        "engine": "wine-sikarugir-10.0_8",
+        "renderer": "dxmt-0.80",
+        "store": "steam-win",
+        "appid": "292030",
+        "exe": "bin/x64/witcher3.exe",
+        "env": {
+          "WINEMSYNC": "1"
+        },
+        "dllOverrides": "dxgi,d3d11,d3d10core,winemetal=b;nvapi64,nvngx=",
+        "args": [],
+        "online": "none"
+      },
+      "minMacos": "14.0",
+      "notes": [
+        "DX11 mode only: Play launches bin/x64/witcher3.exe directly. Through Steam the REDlauncher opens: pick \"DirectX 11\" in its dropdown (or set \"fallback\": \"DirectX 11\" in launcher-configuration.json and add --launcher-skip, which otherwise falls back to DX12).",
+        "FSR and other next-gen DX12-only features are not available in DX11 mode.",
+        "Under DXVK some enemies (sirens) were invisible (Stream Output); not confirmed either way under DXMT.",
+        "About 80 GB free disk for the Windows build in the prefix.",
+        "Without a middle mouse button, bind \"Use Quick Access Item\" to a spare key (Options > Key Bindings)."
+      ],
+      "tested": []
+    },
+    {
+      "game": "homm3",
+      "name": "Heroes of Might and Magic III",
+      "route": "native-port",
+      "port": {
+        "engine": "vcmi-1.7.5",
+        "data": {
+          "from": "gog-installer",
+          "files": [
+            "Data",
+            "Maps",
+            "Mp3"
+          ],
+          "markers": [
+            "vcmi/Data/H3bitmap.lod"
+          ]
+        },
+        "launch": [
+          "VCMI.app/Contents/MacOS/vcmilauncher"
+        ]
+      },
+      "minMacos": "11.0",
+      "notes": [
+        "Needs Heroes III Complete Edition (GOG) or Shadow of Death data. The GOG offline backup installer (.exe + .bin) is imported by the VCMI launcher on first start.",
+        "The Steam HD Edition alone is not enough: VCMI can only add its HD graphics on top of a Complete/SoD install.",
+        "Data lives in ~/Library/Application Support/vcmi/ (Data, Maps, Mp3), VCMI's own folder, not the SIGF ports folder.",
+        "VCMI is an open-source reimplementation of the engine (GPL-2.0-or-later), not the original exe.",
+        "Engine download is a DMG: it is mounted and VCMI.app copied out."
+      ],
+      "tested": []
+    },
+    {
+      "game": "generalszh",
+      "name": "Command & Conquer: Generals Zero Hour",
+      "route": "native-port",
+      "port": {
+        "engine": "generalsx-zh-1.0.3",
+        "data": {
+          "from": "steam-win",
+          "appid": "2732960",
+          "files": [
+            "."
+          ]
+        },
+        "launch": [
+          "GeneralsXZH.app/Contents/MacOS/run.sh"
+        ],
+        "env": {
+          "CNC_GENERALS_ZH_PATH": "{data}"
+        },
+        "via": "wine-sikarugir-10.0_8"
+      },
+      "minMacos": "15.0",
+      "notes": [
+        "Needs the Steam Windows build of Zero Hour (app 2732960): Steam for Mac offers no Install button, so the files come from Windows Steam (or SteamCMD forced to the Windows platform).",
+        "Copy the whole game folder, ZH_Generals/ included: it holds the base Generals archives (Textures.big, Generals.big); without them units and terrain render magenta.",
+        "run.sh reads the data from CNC_GENERALS_ZH_PATH (default ~/GeneralsX/GeneralsZH) and the base game from CNC_GENERALS_PATH or ZH_Generals/.",
+        "GeneralsX reaches campaigns and skirmish on Apple Silicon (project test matrix: macOS 26, Working). Online play uses GeneralsOnline, cross-platform, not EA servers.",
+        "The app bundle is unsigned upstream."
+      ],
+      "tested": []
+    },
+    {
+      "game": "aoe2de",
+      "name": "Age of Empires II: Definitive Edition",
+      "route": "native",
+      "native": {
+        "steamAppId": "813780"
+      },
+      "minMacos": "15.7",
+      "notes": [
+        "Native Apple Silicon build in Mac Steam, free for existing Steam owners; no Wine.",
+        "Online skirmish is against other Mac players (no cross-play with PC announced)."
+      ],
+      "tested": []
+    }
+  ]
+}

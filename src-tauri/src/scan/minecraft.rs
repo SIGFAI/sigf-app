@@ -131,6 +131,7 @@ pub fn scan() -> (Vec<Launcher>, Option<Game>) {
         art_local: None,
         hero_local: None,
         wide_local: None,
+        prefix: None,
     });
     (launchers, game)
 }

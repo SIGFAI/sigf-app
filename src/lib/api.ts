@@ -84,8 +84,15 @@ let platformP: Promise<Platform> | null = null;
 export function appPlatform(): Promise<Platform> {
   platformP ??= inTauri
     ? invoke<Platform>('app_platform').catch(() => 'windows')
-    : Promise.resolve(typeof navigator !== 'undefined' && /Mac/i.test(navigator.platform || navigator.userAgent) ? 'macos' : 'windows');
+    : Promise.resolve(previewPlatform() ?? (typeof navigator !== 'undefined' && /Mac/i.test(navigator.platform || navigator.userAgent) ? 'macos' : 'windows'));
   return platformP;
+}
+
+/** Browser preview only: `?mac=1` shows the macOS app (Play on Mac), `?mac=0` the Windows one, whatever the browser. */
+function previewPlatform(): Platform | null {
+  if (typeof location === 'undefined') return null;
+  const m = new URLSearchParams(location.search).get('mac');
+  return m === '1' ? 'macos' : m === '0' ? 'windows' : null;
 }
 
 /** A catalog card's systems (docs/RECIPE-FORMAT.md section 4, `platforms`): a card without the field is Windows only. */

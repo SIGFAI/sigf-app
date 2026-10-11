@@ -93,7 +93,7 @@ export type Ctx = {
   report: (m: Mashup | null) => void;
   /** Opens a game's page (game key: canonical id, or `steam:<appid>`) or the Games hub (null). `link` opens the import
    *  sheet (nothing is installed before the player clicks), `lib` that library's sheet, `tab` a tab. */
-  game: (key: string | null, o?: { tab?: GameTab; link?: string; lib?: string }) => void;
+  game: (key: string | null, o?: { tab?: GameTab; link?: string; lib?: string; mac?: boolean }) => void;
   /** Steam Workshop runs through sigf-steam.exe, shipped with the Windows build only. */
   workshopOn: boolean;
   /** Game id -> install folder from the scan (engine installs need it). */
@@ -104,7 +104,7 @@ export type Ctx = {
 
 export type GameTab = 'mods' | 'mashups' | 'servers' | 'libraries' | 'workshop';
 /** The Games view's subject (null: the hub); `n` tells a new arrival apart (the same link twice); `lib`: a library to open. */
-export type GameNav = { key: string | null; tab?: GameTab; link?: { text: string; n: number }; lib?: string; n?: number };
+export type GameNav = { key: string | null; tab?: GameTab; link?: { text: string; n: number }; lib?: string; n?: number; mac?: boolean };
 
 const NAV: { id: View; label: Key; icon: string }[] = [
   { id: 'mix', label: 'nav.mix', icon: 'mix' },
@@ -564,11 +564,11 @@ export default function App() {
   };
 
   /** Opens the Games view (hub, or a game's page with a tab, an import link, a library). */
-  const openGame = (key: string | null, o: { tab?: GameTab; link?: string; lib?: string } = {}) => {
+  const openGame = (key: string | null, o: { tab?: GameTab; link?: string; lib?: string; mac?: boolean } = {}) => {
     setDetail(null);
     setView('games');
     const n = ++linkN.current;
-    setNav({ key, tab: o.tab, link: o.link ? { text: o.link, n } : undefined, lib: o.lib, n });
+    setNav({ key, tab: o.tab, link: o.link ? { text: o.link, n } : undefined, lib: o.lib, n, mac: o.mac });
   };
 
   /** A link from outside: a Nexus "Mod manager download" click (`nxm://...`) installs that file; a library
