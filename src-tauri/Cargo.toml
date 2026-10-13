@@ -27,7 +27,7 @@ reqwest = { version = "0.13.5", default-features = false, features = ["blocking"
 sha2 = "0.11.0"
 zip = { version = "8.6.0", default-features = false, features = ["deflate"] }
 # 7z mod archives (src/install/archive.rs): pure Rust, Apache-2.0; decoders only (no AES: encrypted archives are refused).
-sevenz-rust2 = { version = "=0.20.2", default-features = false, features = ["bzip2", "ppmd", "deflate"] }
+sevenz-rust2 = { version = "=0.23.0", default-features = false, features = ["bzip2", "ppmd", "deflate"] }
 thiserror = "2"
 sha1 = "0.11.0"
 # Mod plans: md5 is the only hash some sources give (src/mods.rs, docs/GAME-HUB.md section 5).
@@ -60,4 +60,4 @@ strip = true
 [dev-dependencies]
 tempfile = "3.27.0"
 # 7z fixtures written by the tests (src/install/archive.rs).
-sevenz-rust2 = { version = "=0.20.2", default-features = false, features = ["compress"] }
+sevenz-rust2 = { version = "=0.23.0", default-features = false, features = ["compress"] }
