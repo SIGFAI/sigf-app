@@ -20,7 +20,7 @@
     "@fontsource/ibm-plex-sans": "^5.2.5",
     "@fontsource/michroma": "^5.2.5",
     "@tauri-apps/api": "^2.12.1",
-    "@tauri-apps/plugin-opener": "^2.7.0",
+    "@tauri-apps/plugin-opener": "^2.7.1",
     "hls.js": "1.7.3",
     "react": "^19.3.0",
     "react-dom": "^19.3.0"
